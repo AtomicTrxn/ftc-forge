@@ -44,9 +44,10 @@ Note: the exact release date on that page could not be reliably extracted by the
 
 ### Pedro Pathing
 
-- Distributed as `com.pedropathing:ftc`, with FTCLib and SolversLib wrapper integrations also in circulation.
-- **Could not verify internal source-level details** (threading model, file I/O, Android imports) through the tools available in this session — GitHub's repo page didn't expose source file contents through the fetch used here. This is a **genuine unknown**, not a confirmed "low risk" — see Risks below.
-- What is confirmed: like Road Runner, it consumes the same `HardwareMap`/`DcMotorEx`/`IMU` surface as team code, so at minimum it doesn't introduce a *new* stub-class requirement beyond what's in the table above.
+**Update (resolved during R2):** direct inspection of the repo's file tree and source imports (`Pedro-Pathing/PedroPathing`, `main` branch) confirms a clean two-module split:
+- **`core/`** (`Follower`, `Localizer`, `Path`/`Curve`/`PathSegment`, `PIDController`, `Pose`/`Vector`/`Twist` math) — **zero Android or FTC SDK imports of any kind.** Pure Java, fully portable.
+- **`revhub/`** (`Mecanum`, `Swerve`, `CachedMotor`, `CoaxialPod`) — imports only the standard stub surface already in the table above (`DcMotor`, `DcMotorEx`, `HardwareMap`, `org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit`). One file (`Mecanum.java`) imports `android.annotation.SuppressLint` — a compile-time-only, no-op annotation with no runtime behavior, trivially satisfied with an empty `@interface SuppressLint {}` stub.
+- **Verdict: negligible Android coupling — cleaner than Road Runner's story, not worse.** This closes the gap flagged below; no further spike needed.
 
 ### FTCDashboard
 
