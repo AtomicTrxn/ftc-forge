@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<robot name="team_robot">
+  <link name="chassis">
+    <inertial><mass value="8.5"/><origin xyz="0 0 0.05"/><inertia ixx="0.08" iyy="0.10" izz="0.14" ixy="0" ixz="0" iyz="0"/></inertial>
+    <collision><origin xyz="0 0 0.05"/><geometry><box size="0.40 0.35 0.15"/></geometry></collision>
+  </link>
+  <link name="wheel_left_front">
+    <inertial><mass value="0.15"/><inertia ixx="0.0002" iyy="0.0003" izz="0.0002" ixy="0" ixz="0" iyz="0"/></inertial>
+    <collision><origin rpy="1.5708 0 0"/><geometry><cylinder radius="0.048" length="0.04"/></geometry></collision>
+  </link>
+  <joint name="wheel_lf" type="continuous"><parent link="chassis"/><child link="wheel_left_front"/><origin xyz="0.18 0.15 0"/><axis xyz="0 1 0"/></joint>
+  <transmission name="wheel_lf_tx"><type>transmission_interface/SimpleTransmission</type><joint name="wheel_lf"/><actuator name="left_front_drive"><mechanicalReduction>1</mechanicalReduction></actuator></transmission>
+  <link name="wheel_right_front">
+    <inertial><mass value="0.15"/><inertia ixx="0.0002" iyy="0.0003" izz="0.0002" ixy="0" ixz="0" iyz="0"/></inertial>
+    <collision><origin rpy="1.5708 0 0"/><geometry><cylinder radius="0.048" length="0.04"/></geometry></collision>
+  </link>
+  <joint name="wheel_rf" type="continuous"><parent link="chassis"/><child link="wheel_right_front"/><origin xyz="0.18 -0.15 0"/><axis xyz="0 1 0"/></joint>
+  <transmission name="wheel_rf_tx"><type>transmission_interface/SimpleTransmission</type><joint name="wheel_rf"/><actuator name="right_front_drive"><mechanicalReduction>1</mechanicalReduction></actuator></transmission>
+  <link name="wheel_left_back">
+    <inertial><mass value="0.15"/><inertia ixx="0.0002" iyy="0.0003" izz="0.0002" ixy="0" ixz="0" iyz="0"/></inertial>
+    <collision><origin rpy="1.5708 0 0"/><geometry><cylinder radius="0.048" length="0.04"/></geometry></collision>
+  </link>
+  <joint name="wheel_lb" type="continuous"><parent link="chassis"/><child link="wheel_left_back"/><origin xyz="-0.18 0.15 0"/><axis xyz="0 1 0"/></joint>
+  <transmission name="wheel_lb_tx"><type>transmission_interface/SimpleTransmission</type><joint name="wheel_lb"/><actuator name="left_back_drive"><mechanicalReduction>1</mechanicalReduction></actuator></transmission>
+  <link name="wheel_right_back">
+    <inertial><mass value="0.15"/><inertia ixx="0.0002" iyy="0.0003" izz="0.0002" ixy="0" ixz="0" iyz="0"/></inertial>
+    <collision><origin rpy="1.5708 0 0"/><geometry><cylinder radius="0.048" length="0.04"/></geometry></collision>
+  </link>
+  <joint name="wheel_rb" type="continuous"><parent link="chassis"/><child link="wheel_right_back"/><origin xyz="-0.18 -0.15 0"/><axis xyz="0 1 0"/></joint>
+  <transmission name="wheel_rb_tx"><type>transmission_interface/SimpleTransmission</type><joint name="wheel_rb"/><actuator name="right_back_drive"><mechanicalReduction>1</mechanicalReduction></actuator></transmission>
+  <link name="arm_link">
+    <inertial><mass value="1.2"/><origin xyz="0.15 0 0"/><inertia ixx="0.01" iyy="0.02" izz="0.02" ixy="0" ixz="0" iyz="0"/></inertial>
+    <collision><origin xyz="0.15 0 0"/><geometry><box size="0.30 0.05 0.05"/></geometry></collision>
+  </link>
+  <joint name="arm" type="revolute"><parent link="chassis"/><child link="arm_link"/><origin xyz="0 0 0.12"/><axis xyz="0 1 0"/><limit lower="0" upper="2.09" effort="10" velocity="3"/></joint>
+  <transmission name="arm_tx"><type>transmission_interface/SimpleTransmission</type><joint name="arm"/><actuator name="arm_motor"><mechanicalReduction>1</mechanicalReduction></actuator></transmission>
+  <link name="slide_link">
+    <inertial><mass value="0.6"/><origin xyz="0 0 0.1"/><inertia ixx="0.002" iyy="0.002" izz="0.001" ixy="0" ixz="0" iyz="0"/></inertial>
+    <collision><origin xyz="0 0 0.1"/><geometry><box size="0.06 0.06 0.20"/></geometry></collision>
+  </link>
+  <joint name="slide" type="prismatic"><parent link="arm_link"/><child link="slide_link"/><origin xyz="0.3 0 0"/><axis xyz="1 0 0"/><limit lower="0" upper="0.45" effort="10" velocity="0.5"/></joint>
+  <transmission name="slide_tx"><type>transmission_interface/SimpleTransmission</type><joint name="slide"/><actuator name="slide_motor"><mechanicalReduction>52.6</mechanicalReduction></actuator></transmission>
+</robot>

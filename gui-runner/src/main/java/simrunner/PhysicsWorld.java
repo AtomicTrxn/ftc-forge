@@ -130,8 +130,12 @@ public class PhysicsWorld {
     }
 
     public void buildChassis(Node visualNode, double massKg, Vector3f startPosition) {
-        this.chassisVisualNode = visualNode;
         CollisionShape shape = new BoxCollisionShape(new Vector3f(0.2286f, 0.1f, 0.2286f));
+        buildChassis(visualNode, massKg, startPosition, shape);
+    }
+
+    public void buildChassis(Node visualNode, double massKg, Vector3f startPosition, CollisionShape shape) {
+        this.chassisVisualNode = visualNode;
         chassisControl = new RigidBodyControl(shape, (float) massKg);
         chassisControl.setPhysicsLocation(startPosition);
         // No linear/angular damping: chassis velocity is now directly commanded each tick
@@ -171,6 +175,11 @@ public class PhysicsWorld {
 
     public Vector3f getChassisPosition() { return chassisControl.getPhysicsLocation(); }
     public com.jme3.math.Quaternion getChassisRotation() { return chassisControl.getPhysicsRotation(); }
+
+    public void setChassisInertia(Vector3f momentsKgM2) {
+        chassisControl.setInverseInertiaLocal(new Vector3f(
+            1f / momentsKgM2.x, 1f / momentsKgM2.y, 1f / momentsKgM2.z));
+    }
 
     /**
      * Proximity-trigger intake (per Phase 4's spec: an acceptable simplified model, not full

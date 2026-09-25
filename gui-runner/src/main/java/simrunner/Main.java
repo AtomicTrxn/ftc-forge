@@ -7,6 +7,7 @@ import simcore.ConsoleTelemetry;
 import simcore.HardwareMapBuilder;
 import simcore.PresetRobotConfig;
 import simcore.RobotConfigXml;
+import simcore.RobotUrdf;
 
 import java.io.File;
 import java.net.URL;
@@ -60,6 +61,13 @@ public class Main {
         System.out.println("[EXECUTOR] Robot config: " + preset.name + " (" + xml.devices.size() + " devices)");
 
         HardwareMap hardwareMap = HardwareMapBuilder.build(xml, preset);
+        if (simConfig.urdf != null) {
+            RobotUrdf urdf = RobotUrdf.parse(projectDir.resolve(simConfig.urdf));
+            if (simConfig.totalMassKg != null) urdf = urdf.withTotalMassKg(simConfig.totalMassKg);
+            urdf.validateHardwareMap(hardwareMap);
+            System.out.println("[IMPORT] " + urdf.name + ": " + urdf.links.size() + " links, "
+                + urdf.joints.size() + " joints, mass=" + urdf.totalMassKg() + "kg");
+        }
         Telemetry telemetry = new ConsoleTelemetry();
         Gamepad gamepad1 = new Gamepad();
         Gamepad gamepad2 = new Gamepad();

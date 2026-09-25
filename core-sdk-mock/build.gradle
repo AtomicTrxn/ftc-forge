@@ -8,4 +8,8 @@
 // it; only the internal simcore.* package depends on physics-engine).
 dependencies {
     implementation project(':physics-engine')
+    testImplementation platform('org.junit:junit-bom:5.10.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
 }
+
+test { useJUnitPlatform() }
