@@ -2,6 +2,9 @@ package simrunner;
 
 import javax.tools.*;
 import java.io.IOException;
+import java.io.File;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.*;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -13,7 +16,7 @@ import java.util.stream.Collectors;
  */
 public class TeamCodeCompiler {
 
-    public static Path compile(Path sourceRoot, List<String> extraClasspath) throws IOException {
+    public static Path compile(Path projectDir, Path sourceRoot, List<String> extraClasspath) throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
             throw new IllegalStateException(
@@ -34,9 +37,11 @@ public class TeamCodeCompiler {
         StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null);
         Iterable<? extends JavaFileObject> units = fileManager.getJavaFileObjectsFromPaths(sourceFiles);
 
+        List<Path> dependencies = resolveExtraClasspath(projectDir, extraClasspath);
         List<String> options = new ArrayList<>(List.of(
             "-d", outputDir.toString(),
-            "-cp", System.getProperty("java.class.path") + (extraClasspath.isEmpty() ? "" : (":" + String.join(":", extraClasspath)))
+            "-cp", System.getProperty("java.class.path") + (dependencies.isEmpty() ? "" :
+                File.pathSeparator + dependencies.stream().map(Path::toString).collect(Collectors.joining(File.pathSeparator)))
         ));
 
         StringWriterDiagnostics diagnostics = new StringWriterDiagnostics();
@@ -50,6 +55,26 @@ public class TeamCodeCompiler {
             throw new IllegalStateException("Team code failed to compile:\n" + diagnostics.messages);
         }
         return outputDir;
+    }
+
+    public static URLClassLoader newClassLoader(Path projectDir, Path classesDir, List<String> extraClasspath)
+        throws IOException {
+        List<URL> urls = new ArrayList<>();
+        urls.add(classesDir.toUri().toURL());
+        for (Path dependency : resolveExtraClasspath(projectDir, extraClasspath)) {
+            urls.add(dependency.toUri().toURL());
+        }
+        return new URLClassLoader(urls.toArray(URL[]::new), TeamCodeCompiler.class.getClassLoader());
+    }
+
+    private static List<Path> resolveExtraClasspath(Path projectDir, List<String> extraClasspath) throws IOException {
+        List<Path> resolved = new ArrayList<>();
+        for (String entry : extraClasspath) {
+            Path path = projectDir.resolve(entry).toAbsolutePath().normalize();
+            if (!Files.exists(path)) throw new IOException("extraClasspath entry does not exist: " + path);
+            resolved.add(path);
+        }
+        return resolved;
     }
 
     private static class StringWriterDiagnostics implements DiagnosticListener<JavaFileObject> {

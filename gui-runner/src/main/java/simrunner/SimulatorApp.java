@@ -20,6 +20,7 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Gamepad;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.Servo;
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 import physics.MecanumKinematics;
@@ -28,8 +29,8 @@ import simcore.HardwareMapBuilder;
 import simcore.PresetRobotConfig;
 import simcore.RobotConfigXml;
 import simcore.RobotUrdf;
+import simcore.SimIMU;
 
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.List;
@@ -38,7 +39,7 @@ import java.util.List;
  * Phase 2/4: jME renderer (per R2 -- jMonkeyEngine, not a separate toolkit). Runs a real
  * OpMode via Phase 1's Executor, feeds its motor state through MecanumKinematics each frame,
  * and (per Phase 4) drives a real Libbulletjme/Minie rigid-body chassis with the resulting
- * force/torque -- Bullet resolves wall/game-piece contact, not wheel-ground traction (R2/R6's
+ * target velocity -- Bullet resolves wall/game-piece contact, not wheel-ground traction (R2/R6's
  * Mecanum constraint). Camera is now a 3D perspective view (was Phase 2's orthographic
  * top-down), extending the same scene rather than replacing it.
  *
@@ -69,6 +70,7 @@ public class SimulatorApp extends SimpleApplication {
     private ImportedRobotScene importedScene;
     private Executor.Session opModeSession;
     private String[] motorNames;
+    private double simTimeMs;
     private final double[] wheelRadii = {WHEEL_RADIUS_M, WHEEL_RADIUS_M, WHEEL_RADIUS_M, WHEEL_RADIUS_M};
 
     public SimulatorApp(Path projectDir, String opModeName) {
@@ -199,9 +201,9 @@ public class SimulatorApp extends SimpleApplication {
     private void loadRobotAndStartOpMode() throws Exception {
         SimConfig simConfig = SimConfig.load(projectDir);
         Path sourceRoot = projectDir.resolve(simConfig.sourceRoot);
-        Path classesDir = TeamCodeCompiler.compile(sourceRoot, simConfig.extraClasspath);
+        Path classesDir = TeamCodeCompiler.compile(projectDir, sourceRoot, simConfig.extraClasspath);
 
-        URLClassLoader teamLoader = new URLClassLoader(new URL[]{classesDir.toUri().toURL()}, SimulatorApp.class.getClassLoader());
+        URLClassLoader teamLoader = TeamCodeCompiler.newClassLoader(projectDir, classesDir, simConfig.extraClasspath);
         List<OpModeDiscovery.DiscoveredOpMode> discovered = OpModeDiscovery.discover(classesDir, teamLoader);
         OpModeDiscovery.DiscoveredOpMode target = discovered.stream()
             .filter(d -> d.className.endsWith("." + opModeName) || d.displayName.equals(opModeName))
@@ -211,6 +213,9 @@ public class SimulatorApp extends SimpleApplication {
         RobotConfigXml xml = RobotConfigXml.parse(projectDir.resolve(simConfig.robotConfig).toFile());
         PresetRobotConfig preset = PresetRobotConfig.load(projectDir.resolve(simConfig.presetMotors));
         hardwareMap = HardwareMapBuilder.build(xml, preset);
+        for (IMU imu : hardwareMap.getAll(IMU.class)) {
+            ((SimIMU) imu).setLatencyMs(simConfig.imuLatencyMs);
+        }
         double trackWidthM = 0.30, wheelBaseM = 0.35;
 
         if (simConfig.urdf != null) {
@@ -297,11 +302,19 @@ public class SimulatorApp extends SimpleApplication {
         MecanumKinematics.ChassisVelocity v = kinematics.forwardFromWheelSpeeds(
             wheelSpeeds[0], wheelSpeeds[1], wheelSpeeds[2], wheelSpeeds[3]);
 
-        // Phase 4: drive the real rigid-body chassis with a force/torque (R2/R6's Mecanum
-        // constraint) instead of directly integrating a kinematic pose -- Bullet's
+        // Phase 4: drive the real rigid-body chassis with target velocity from the Mecanum
+        // constraint instead of directly integrating a kinematic pose -- Bullet's
         // RigidBodyControl on robotNode syncs its transform from physics automatically, so
         // there's no manual setLocalTranslation/setLocalRotation here anymore.
         physicsWorld.driveChassis(v, tpf);
+
+        simTimeMs += tpf * 1000.0;
+        Vector3f heading = physicsWorld.getChassisRotation().mult(Vector3f.UNIT_X);
+        double yawRad = Math.atan2(-heading.z, heading.x);
+        double yawRateRadS = physicsWorld.getChassisAngularVelocity().y;
+        for (IMU imu : hardwareMap.getAll(IMU.class)) {
+            ((SimIMU) imu).update(yawRad, yawRateRadS, Math.round(simTimeMs));
+        }
 
         // Intake: "claw" servo position > 0.5 means active, per this phase's sample OpMode.
         Servo claw = hardwareMap.tryGet(Servo.class, "claw");

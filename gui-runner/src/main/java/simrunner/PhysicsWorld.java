@@ -175,6 +175,7 @@ public class PhysicsWorld {
 
     public Vector3f getChassisPosition() { return chassisControl.getPhysicsLocation(); }
     public com.jme3.math.Quaternion getChassisRotation() { return chassisControl.getPhysicsRotation(); }
+    public Vector3f getChassisAngularVelocity() { return chassisControl.getAngularVelocity(); }
 
     public void setChassisInertia(Vector3f momentsKgM2) {
         chassisControl.setInverseInertiaLocal(new Vector3f(
