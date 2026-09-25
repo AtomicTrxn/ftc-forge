@@ -10,7 +10,6 @@ import simcore.RobotConfigXml;
 import simcore.RobotUrdf;
 
 import java.io.File;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.List;
@@ -36,12 +35,11 @@ public class Main {
         Path sourceRoot = projectDir.resolve(simConfig.sourceRoot);
 
         System.out.println("[EXECUTOR] Compiling " + sourceRoot + " ...");
-        Path classesDir = TeamCodeCompiler.compile(sourceRoot, simConfig.extraClasspath);
+        Path classesDir = TeamCodeCompiler.compile(projectDir, sourceRoot, simConfig.extraClasspath);
         System.out.println("[EXECUTOR] Compiled to " + classesDir);
 
         // Fresh classloader per reload (R3): static team-code state never survives across runs.
-        URL[] urls = { classesDir.toUri().toURL() };
-        URLClassLoader teamLoader = new URLClassLoader(urls, Main.class.getClassLoader());
+        URLClassLoader teamLoader = TeamCodeCompiler.newClassLoader(projectDir, classesDir, simConfig.extraClasspath);
 
         List<OpModeDiscovery.DiscoveredOpMode> discovered = OpModeDiscovery.discover(classesDir, teamLoader);
         System.out.println("[EXECUTOR] Discovered " + discovered.size() + " OpMode(s) via @TeleOp/@Autonomous scan:");
@@ -73,7 +71,7 @@ public class Main {
         Gamepad gamepad2 = new Gamepad();
 
         System.out.println("[EXECUTOR] Running " + target.displayName + " (watchdog timeout " + watchdogTimeoutMillis + "ms)...");
-        Executor.RunResult result = Executor.runLinearOpMode(target, hardwareMap, telemetry, gamepad1, gamepad2, watchdogTimeoutMillis);
+        Executor.RunResult result = Executor.runOpMode(target, hardwareMap, telemetry, gamepad1, gamepad2, watchdogTimeoutMillis);
 
         if (result.watchdogTriggered) {
             System.out.println("[EXECUTOR] Session marked DEAD by watchdog -- OpMode did not finish in time.");

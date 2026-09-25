@@ -16,17 +16,26 @@ dependencies {
     // Minie bundles Libbulletjme's native code (incl. V-HACD) directly, so no separate
     // Libbulletjme dependency is needed.
     implementation 'com.github.stephengold:Minie:9.0.3'
+    testImplementation platform('org.junit:junit-bom:5.10.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
 }
+
+test { useJUnitPlatform() }
 
 application {
     mainClass = 'simrunner.Main'
 }
 
+tasks.named('run', JavaExec) {
+    workingDir = rootProject.projectDir
+}
+
 tasks.register('runSimulatorApp', JavaExec) {
     group = 'application'
-    description = 'Launches the jME 2D-canvas (orthographic) simulator window (Phase 2).'
+    description = 'Launches the 3D jME simulator window.'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'simrunner.SimulatorApp'
+    workingDir = rootProject.projectDir
     // GLFW/AWT on macOS require windowing calls on the process's first thread.
     jvmArgs = ['-XstartOnFirstThread']
 }

@@ -20,9 +20,9 @@ import simcore.HardwareMapBuilder;
 public class Executor {
 
     public static class RunResult {
-        public boolean completedNormally;
-        public boolean watchdogTriggered;
-        public Throwable failure;
+        public volatile boolean completedNormally;
+        public volatile boolean watchdogTriggered;
+        public volatile Throwable failure;
     }
 
     /** A running (or finished) OpMode session -- lets a live render loop (Phase 2) poll state without blocking. */
@@ -36,7 +36,7 @@ public class Executor {
         public boolean isAlive() { return opModeThread.isAlive(); }
     }
 
-    /** Starts a LinearOpMode on its own thread and returns immediately -- does not block on the watchdog. */
+    /** Starts either OpMode style on its own thread and returns without waiting for completion. */
     public static Session start(OpModeDiscovery.DiscoveredOpMode discovered,
                                  HardwareMap hardwareMap,
                                  Telemetry telemetry,
@@ -47,15 +47,14 @@ public class Executor {
         instance.gamepad1 = gamepad1;
         instance.gamepad2 = gamepad2;
 
-        if (!(instance instanceof LinearOpMode)) {
-            throw new IllegalArgumentException(discovered.className + " is not a LinearOpMode -- use runIterativeOpMode instead.");
-        }
-        LinearOpMode linear = (LinearOpMode) instance;
-
         RunResult result = new RunResult();
         Thread opModeThread = new Thread(() -> {
             try {
-                linear.runOpMode();
+                if (instance instanceof LinearOpMode linear) {
+                    linear.runOpMode();
+                } else {
+                    runIterative(instance);
+                }
                 result.completedNormally = true;
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -77,16 +76,42 @@ public class Executor {
         opModeThread.start();
         tickThread.start();
 
-        // Headless stand-in for the Driver Station's INIT->PLAY transition: signal start almost
-        // immediately, since there's no human pressing PLAY in this validation harness.
-        Thread.sleep(50);
-        linear.internalSignalStart();
+        // Headless stand-in for the Driver Station's INIT->PLAY transition. Iterative
+        // OpModes perform their own short INIT period inside runIterative().
+        if (instance instanceof LinearOpMode linear) {
+            Thread.sleep(50);
+            linear.internalSignalStart();
+        }
 
         return new Session(opModeThread, result);
     }
 
-    /** Runs a LinearOpMode on its own thread, exactly like the real SDK (per R1), blocking until it finishes or the watchdog fires. */
-    public static RunResult runLinearOpMode(OpModeDiscovery.DiscoveredOpMode discovered,
+    private static void runIterative(OpMode opMode) throws InterruptedException {
+        try {
+            opMode.init();
+            long initDeadline = System.nanoTime() + 50_000_000L;
+            do {
+                opMode.init_loop();
+                Thread.sleep(20);
+            } while (!opMode.isStopRequestedInternal() && System.nanoTime() < initDeadline);
+            if (!opMode.isStopRequestedInternal()) {
+                opMode.start();
+                opMode.resetRuntime();
+                while (!opMode.isStopRequestedInternal()) {
+                    long tickStart = System.nanoTime();
+                    opMode.time = opMode.getRuntime();
+                    opMode.loop();
+                    long elapsedMs = (System.nanoTime() - tickStart) / 1_000_000L;
+                    if (elapsedMs < 20) Thread.sleep(20 - elapsedMs);
+                }
+            }
+        } finally {
+            opMode.stop();
+        }
+    }
+
+    /** Runs either OpMode style until normal completion or the watchdog fires. */
+    public static RunResult runOpMode(OpModeDiscovery.DiscoveredOpMode discovered,
                                              HardwareMap hardwareMap,
                                              Telemetry telemetry,
                                              Gamepad gamepad1, Gamepad gamepad2,
@@ -101,5 +126,13 @@ public class Executor {
             throw new RuntimeException("OpMode " + discovered.className + " threw", session.result.failure);
         }
         return session.result;
+    }
+
+    /** Compatibility alias for callers from Phase 1. */
+    public static RunResult runLinearOpMode(OpModeDiscovery.DiscoveredOpMode discovered,
+                                             HardwareMap hardwareMap, Telemetry telemetry,
+                                             Gamepad gamepad1, Gamepad gamepad2,
+                                             long watchdogTimeoutMillis) throws Exception {
+        return runOpMode(discovered, hardwareMap, telemetry, gamepad1, gamepad2, watchdogTimeoutMillis);
     }
 }

@@ -16,11 +16,12 @@ Put paths in `sim.config`. See [`sample-teamcode/sim-urdf.config.example`](sampl
   "urdf": "robot.urdf",
   "total_mass_kg": 11.0,
   "vhacd_max_hulls": 8,
+  "imu_latency_ms": 8,
   "extraClasspath": []
 }
 ```
 
-`total_mass_kg` is optional. Use the robot's measured mass if CAD material assignments are inaccurate; all link masses and inertia tensor entries scale proportionally. `vhacd_max_hulls` is optional and must be 1–16. The default is 8, chosen conservatively after Phase 4 exposed unstable contacts at a much higher hull count. Inspect collisions for each imported mesh before trusting its accuracy.
+`total_mass_kg` is optional. Use the robot's measured mass if CAD material assignments are inaccurate; all link masses and inertia tensor entries scale proportionally. `vhacd_max_hulls` is optional and must be 1–16. The default is 8, chosen conservatively after Phase 4 exposed unstable contacts at a much higher hull count. Inspect collisions for each imported mesh before trusting its accuracy. `imu_latency_ms` is optional (0–200, default 8) and applies to physics-driven yaw and yaw rate in the renderer.
 
 Each movable URDF joint gets a `<transmission>` whose actuator names match names in the FTC XML. A transmission may have two actuators for a two-motor slide. `mechanicalReduction` is motor output-shaft radians per joint radian, or radians per joint meter for a prismatic joint. The importer rejects an actuator absent from the paired `HardwareMap` at load time. Motor specs remain in the preset JSON and do not move into URDF.
 
@@ -28,13 +29,13 @@ The parser handles `fixed`, `continuous`, `revolute`, and `prismatic` joints; bo
 
 The chassis rigid body uses the imported fixed-link collision subtree, total link mass, and an aggregate inertia estimate that updates as moving links change position. Movable mechanism geometry is rendered and encoder tracked, but does not yet collide as separate articulated rigid bodies. For STL chassis collision, the importer runs V-HACD to create convex hulls and rejects an empty decomposition. Very dense meshes may need simplification before import.
 
-To run the sample on this machine with the cached Gradle distribution:
+To run the sample with the included Gradle wrapper:
 
 ```sh
 cp -R gui-runner/sample-teamcode /tmp/ftc-import-example
 cp /tmp/ftc-import-example/sim-urdf.config.example /tmp/ftc-import-example/sim.config
-gradle :gui-runner:run --args='/tmp/ftc-import-example BasicMecanumOpMode'
-gradle :gui-runner:runSimulatorApp --args='/tmp/ftc-import-example BasicMecanumOpMode'
+./gradlew :gui-runner:run --args='/tmp/ftc-import-example BasicMecanumOpMode'
+./gradlew :gui-runner:runSimulatorApp --args='/tmp/ftc-import-example BasicMecanumOpMode'
 ```
 
 ## CAD export reality check
