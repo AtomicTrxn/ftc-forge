@@ -1,6 +1,7 @@
 package simrunner;
 
 import com.jme3.app.SimpleApplication;
+import com.jme3.bullet.BulletAppState;
 import com.jme3.input.Joystick;
 import com.jme3.input.KeyInput;
 import com.jme3.input.controls.ActionListener;
@@ -13,13 +14,14 @@ import com.jme3.math.Vector3f;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
 import com.jme3.scene.shape.Box;
+import com.jme3.scene.shape.Cylinder;
 import com.jme3.scene.shape.Quad;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Gamepad;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import com.qualcomm.robotcore.hardware.Servo;
 import org.firstinspires.ftc.robotcore.external.Telemetry;
-import physics.ChassisPose;
 import physics.MecanumKinematics;
 import simcore.ConsoleTelemetry;
 import simcore.HardwareMapBuilder;
@@ -32,20 +34,24 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * Phase 2: jME orthographic top-down "2D canvas" (per R2 -- jMonkeyEngine, not a separate
- * 2D toolkit, so Phase 4 extends this same renderer instead of rewriting it). Runs a real
+ * Phase 2/4: jME renderer (per R2 -- jMonkeyEngine, not a separate toolkit). Runs a real
  * OpMode via Phase 1's Executor, feeds its motor state through MecanumKinematics each frame,
- * and moves a robot Node according to the resulting field-frame pose.
+ * and (per Phase 4) drives a real Libbulletjme/Minie rigid-body chassis with the resulting
+ * force/torque -- Bullet resolves wall/game-piece contact, not wheel-ground traction (R2/R6's
+ * Mecanum constraint). Camera is now a 3D perspective view (was Phase 2's orthographic
+ * top-down), extending the same scene rather than replacing it.
  *
  * World-frame convention: field lies in the XZ plane (Y=0, jME's default ground plane).
- * ChassisPose's (xMeters, yMeters) map to world (X, -Z); heading maps to a rotation about
- * world +Y. This mapping is this project's own convention, not a physical requirement.
+ * Chassis-frame (vx, vy) map to world (X, -Z); heading maps to a rotation about world +Y.
+ * This mapping is this project's own convention, not a physical requirement.
  */
 public class SimulatorApp extends SimpleApplication {
 
     private static final float FIELD_SIZE_M = 3.6576f; // 12 ft
     private static final float TILE_SIZE_M = 0.6096f;   // 24 in
     private static final int TILES_PER_SIDE = 6;
+    private static final double CHASSIS_MASS_KG = 8.5; // per R6's earlier worked example
+    private static final float WHEEL_VISUAL_RADIUS_M = 0.048f;
 
     private final Path projectDir;
     private final String opModeName;
@@ -53,9 +59,12 @@ public class SimulatorApp extends SimpleApplication {
     private HardwareMap hardwareMap;
     private final Gamepad gamepad1 = new Gamepad();
     private final Gamepad gamepad2 = new Gamepad();
-    private final ChassisPose pose = new ChassisPose();
     private MecanumKinematics kinematics;
     private Node robotNode;
+    private Geometry[] wheelGeoms;
+    private double[] wheelVisualAngleRad;
+    private BulletAppState bulletAppState;
+    private PhysicsWorld physicsWorld;
     private Executor.Session opModeSession;
     private String[] motorNames;
 
@@ -76,9 +85,16 @@ public class SimulatorApp extends SimpleApplication {
 
     @Override
     public void simpleInitApp() {
-        setUpOrthoCamera();
+        bulletAppState = new BulletAppState();
+        stateManager.attach(bulletAppState);
+        physicsWorld = new PhysicsWorld(assetManager, rootNode, bulletAppState);
+
+        setUpPerspectiveCamera();
         buildField();
+        physicsWorld.buildFieldBoundary();
         buildRobot();
+        physicsWorld.buildChassis(robotNode, CHASSIS_MASS_KG, new Vector3f(0, 0.1f, 0));
+        physicsWorld.buildGamePiece(new Vector3f(0.8f, 0.05f, 0));
         bindGamepadControls();
         try {
             loadRobotAndStartOpMode();
@@ -87,14 +103,11 @@ public class SimulatorApp extends SimpleApplication {
         }
     }
 
-    private void setUpOrthoCamera() {
-        float aspect = (float) cam.getWidth() / cam.getHeight();
-        float halfSize = FIELD_SIZE_M / 2f + 0.5f; // small margin around the field
-        cam.setParallelProjection(true);
-        cam.setFrustum(-1000, 1000, -aspect * halfSize, aspect * halfSize, halfSize, -halfSize);
-        cam.setLocation(new Vector3f(0, 10, 0));
-        cam.lookAtDirection(new Vector3f(0, -1, 0), new Vector3f(0, 0, -1));
-        flyCam.setEnabled(false); // top-down view is fixed; no free-fly camera in v1
+    /** Phase 4: swaps Phase 2's orthographic top-down camera for a 3D perspective view showing real depth. */
+    private void setUpPerspectiveCamera() {
+        cam.setLocation(new Vector3f(0f, 2.2f, 3.2f));
+        cam.lookAt(new Vector3f(0.4f, 0f, 0f), Vector3f.UNIT_Y);
+        flyCam.setEnabled(false); // fixed 3/4 view in v1; free-fly camera is a future nicety, not required here
     }
 
     private void buildField() {
@@ -136,6 +149,23 @@ public class SimulatorApp extends SimpleApplication {
         frontGeom.setMaterial(frontMat);
         frontGeom.setLocalTranslation(0.2286f, 0.15f, 0);
         robotNode.attachChild(frontGeom);
+
+        // Phase 4: visual-only wheels (per R2/R6 -- no separate physics bodies / no wheel-ground
+        // contact; each wheel's spin is driven by the real motor model's encoder state).
+        wheelGeoms = new Geometry[4];
+        wheelVisualAngleRad = new double[4];
+        float[][] wheelOffsets = {{0.18f, 0.15f}, {0.18f, -0.15f}, {-0.18f, 0.15f}, {-0.18f, -0.15f}};
+        for (int i = 0; i < 4; i++) {
+            Cylinder wheelMesh = new Cylinder(8, 16, WHEEL_VISUAL_RADIUS_M, 0.04f, true);
+            Geometry wheelGeom = new Geometry("wheel-" + i, wheelMesh);
+            Material wheelMat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+            wheelMat.setColor("Color", ColorRGBA.Black);
+            wheelGeom.setMaterial(wheelMat);
+            wheelGeom.setLocalTranslation(wheelOffsets[i][0], 0, wheelOffsets[i][1]);
+            wheelGeom.setLocalRotation(new Quaternion().fromAngleAxis(FastMath.HALF_PI, Vector3f.UNIT_X));
+            robotNode.attachChild(wheelGeom);
+            wheelGeoms[i] = wheelGeom;
+        }
 
         rootNode.attachChild(robotNode);
     }
@@ -194,24 +224,42 @@ public class SimulatorApp extends SimpleApplication {
     public void simpleUpdate(float tpf) {
         if (hardwareMap == null) return;
 
-        // Phase 3: use each wheel's REAL angular velocity (with the motor model's torque/speed
-        // lag, per R4) rather than commanded power directly -- closes the open issue Phase 2
-        // flagged about this interface. Casting to SimDcMotorEx is fine here (simulator-internal
-        // code, not team-facing); the real FTC SDK has no standard way to ask a DcMotorEx for
-        // its own encoder CPR either, so a team's real OpMode couldn't do this generically.
-        double vLF = wheelLinearSpeed(hardwareMap.get(DcMotorEx.class, motorNames[0]));
-        double vRF = wheelLinearSpeed(hardwareMap.get(DcMotorEx.class, motorNames[1]));
-        double vLB = wheelLinearSpeed(hardwareMap.get(DcMotorEx.class, motorNames[2]));
-        double vRB = wheelLinearSpeed(hardwareMap.get(DcMotorEx.class, motorNames[3]));
+        // Real motor angular velocities (R4's torque/speed model), converted to logical
+        // (commanded-sign) wheel speed -- see wheelLinearSpeed's own javadoc for why the
+        // Direction correction matters. Also spins each wheel's visual mesh independently.
+        DcMotorEx[] driveMotors = {
+            hardwareMap.get(DcMotorEx.class, motorNames[0]), hardwareMap.get(DcMotorEx.class, motorNames[1]),
+            hardwareMap.get(DcMotorEx.class, motorNames[2]), hardwareMap.get(DcMotorEx.class, motorNames[3])
+        };
+        double[] wheelSpeeds = new double[4];
+        for (int i = 0; i < 4; i++) {
+            wheelSpeeds[i] = wheelLinearSpeed(driveMotors[i]);
+            wheelVisualAngleRad[i] += (wheelSpeeds[i] / WHEEL_VISUAL_RADIUS_M) * tpf;
+            wheelGeoms[i].setLocalRotation(
+                new Quaternion().fromAngleAxis(FastMath.HALF_PI, Vector3f.UNIT_X)
+                    .mult(new Quaternion().fromAngleAxis((float) wheelVisualAngleRad[i], Vector3f.UNIT_Z)));
+        }
 
-        MecanumKinematics.ChassisVelocity v = kinematics.forwardFromWheelSpeeds(vLF, vRF, vLB, vRB);
-        pose.integrate(v, tpf);
+        MecanumKinematics.ChassisVelocity v = kinematics.forwardFromWheelSpeeds(
+            wheelSpeeds[0], wheelSpeeds[1], wheelSpeeds[2], wheelSpeeds[3]);
 
-        robotNode.setLocalTranslation((float) pose.xMeters, 0.05f, (float) -pose.yMeters);
-        robotNode.setLocalRotation(new Quaternion().fromAngleAxis((float) pose.headingRad, Vector3f.UNIT_Y));
+        // Phase 4: drive the real rigid-body chassis with a force/torque (R2/R6's Mecanum
+        // constraint) instead of directly integrating a kinematic pose -- Bullet's
+        // RigidBodyControl on robotNode syncs its transform from physics automatically, so
+        // there's no manual setLocalTranslation/setLocalRotation here anymore.
+        physicsWorld.driveChassis(v, tpf);
+
+        // Intake: "claw" servo position > 0.5 means active, per this phase's sample OpMode.
+        Servo claw = hardwareMap.tryGet(Servo.class, "claw");
+        boolean intakeActive = claw != null && claw.getPosition() > 0.5;
+        Vector3f chassisPos = physicsWorld.getChassisPosition();
+        Vector3f forward = physicsWorld.getChassisRotation().mult(new Vector3f(1, 0, 0));
+        Vector3f intakePoint = chassisPos.add(forward.mult(0.35f));
+        physicsWorld.updateIntake(intakeActive, intakePoint, 0.15f);
 
         if (opModeSession != null && !opModeSession.isAlive()) {
-            System.out.println("[SIM] OpMode finished. Final pose: " + pose);
+            System.out.println("[SIM] OpMode finished. Final chassis position: " + physicsWorld.getChassisPosition()
+                + " gamePieceHeld=" + physicsWorld.isPieceHeld());
             opModeSession = null; // avoid repeated stop() calls across frames
             stop();
         }
