@@ -42,13 +42,26 @@ public class MecanumKinematics {
         }
     }
 
-    /** Forward kinematics: four wheel powers in [-1, 1] -> chassis-frame velocity. */
+    /**
+     * Forward kinematics: four wheel powers in [-1, 1] -> chassis-frame velocity. Assumes an
+     * idealized instant power-to-speed response -- fine for Phase 2, but Phase 3's real motor
+     * model has actual torque/speed dynamics (acceleration lag, load-dependent slip in speed),
+     * so real wheel speeds should go through forwardFromWheelSpeeds() below instead once
+     * they're available. This overload is kept as a convenience wrapper over that one.
+     */
     public ChassisVelocity forward(double powerLF, double powerRF, double powerLB, double powerRB) {
-        double vLF = powerLF * maxWheelSpeedMetersPerSecond;
-        double vRF = powerRF * maxWheelSpeedMetersPerSecond;
-        double vLB = powerLB * maxWheelSpeedMetersPerSecond;
-        double vRB = powerRB * maxWheelSpeedMetersPerSecond;
+        return forwardFromWheelSpeeds(
+            powerLF * maxWheelSpeedMetersPerSecond, powerRF * maxWheelSpeedMetersPerSecond,
+            powerLB * maxWheelSpeedMetersPerSecond, powerRB * maxWheelSpeedMetersPerSecond);
+    }
 
+    /**
+     * Forward kinematics from actual wheel linear speeds (m/s), not commanded power -- the
+     * form Phase 3's real motor model output should be converted into (wheel angular velocity
+     * x wheel radius), so the chassis correctly reflects real torque/speed lag instead of an
+     * idealized instant response.
+     */
+    public ChassisVelocity forwardFromWheelSpeeds(double vLF, double vRF, double vLB, double vRB) {
         double vx = (vLF + vRF + vLB + vRB) / 4.0;
         double vy = (-vLF + vRF + vLB - vRB) / 4.0;
         double omega = (-vLF + vRF - vLB + vRB) / (4.0 * turnRadius);

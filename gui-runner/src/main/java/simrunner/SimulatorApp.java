@@ -15,6 +15,7 @@ import com.jme3.scene.Node;
 import com.jme3.scene.shape.Box;
 import com.jme3.scene.shape.Quad;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Gamepad;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import org.firstinspires.ftc.robotcore.external.Telemetry;
@@ -193,12 +194,17 @@ public class SimulatorApp extends SimpleApplication {
     public void simpleUpdate(float tpf) {
         if (hardwareMap == null) return;
 
-        double pLF = hardwareMap.get(DcMotorEx.class, motorNames[0]).getPower();
-        double pRF = hardwareMap.get(DcMotorEx.class, motorNames[1]).getPower();
-        double pLB = hardwareMap.get(DcMotorEx.class, motorNames[2]).getPower();
-        double pRB = hardwareMap.get(DcMotorEx.class, motorNames[3]).getPower();
+        // Phase 3: use each wheel's REAL angular velocity (with the motor model's torque/speed
+        // lag, per R4) rather than commanded power directly -- closes the open issue Phase 2
+        // flagged about this interface. Casting to SimDcMotorEx is fine here (simulator-internal
+        // code, not team-facing); the real FTC SDK has no standard way to ask a DcMotorEx for
+        // its own encoder CPR either, so a team's real OpMode couldn't do this generically.
+        double vLF = wheelLinearSpeed(hardwareMap.get(DcMotorEx.class, motorNames[0]));
+        double vRF = wheelLinearSpeed(hardwareMap.get(DcMotorEx.class, motorNames[1]));
+        double vLB = wheelLinearSpeed(hardwareMap.get(DcMotorEx.class, motorNames[2]));
+        double vRB = wheelLinearSpeed(hardwareMap.get(DcMotorEx.class, motorNames[3]));
 
-        MecanumKinematics.ChassisVelocity v = kinematics.forward(pLF, pRF, pLB, pRB);
+        MecanumKinematics.ChassisVelocity v = kinematics.forwardFromWheelSpeeds(vLF, vRF, vLB, vRB);
         pose.integrate(v, tpf);
 
         robotNode.setLocalTranslation((float) pose.xMeters, 0.05f, (float) -pose.yMeters);
@@ -209,5 +215,27 @@ public class SimulatorApp extends SimpleApplication {
             opModeSession = null; // avoid repeated stop() calls across frames
             stop();
         }
+    }
+
+    private static final double WHEEL_RADIUS_M = 0.048; // goBILDA 96mm mecanum wheel (common FTC drivetrain wheel)
+
+    /**
+     * Converts a motor's real physical angular velocity into the "logical" (commanded-sign)
+     * wheel speed the kinematics formula expects. This distinction matters and is easy to get
+     * wrong: DcMotor.Direction.REVERSE exists specifically so a team's own code can use
+     * consistent +power-means-forward semantics despite physically mirrored motor mounting on
+     * opposite drivetrain sides -- the kinematics solver's sign convention is defined in terms
+     * of that same commanded/logical intent, not raw physical rotation. Using getOmegaRadS()
+     * directly (without undoing the Direction flip) silently breaks kinematics for any wheel
+     * with Direction.REVERSE set -- caught by an actual renderer run producing a stuck,
+     * spinning-in-place robot instead of driving, not assumed correct in advance.
+     */
+    private double wheelLinearSpeed(DcMotorEx motor) {
+        if (motor instanceof simcore.SimDcMotorEx) {
+            double physicalOmega = ((simcore.SimDcMotorEx) motor).getOmegaRadS();
+            double logicalOmega = motor.getDirection() == DcMotorSimple.Direction.FORWARD ? physicalOmega : -physicalOmega;
+            return logicalOmega * WHEEL_RADIUS_M;
+        }
+        return motor.getPower() * kinematics.maxWheelSpeedMetersPerSecond; // fallback, shouldn't hit in this simulator
     }
 }

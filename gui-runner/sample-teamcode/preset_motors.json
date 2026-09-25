@@ -1,11 +1,11 @@
 {
   "name": "4-Motor Mecanum + Arm + Slide (mirrors R6's worked example robot)",
   "motors": {
-    "left_front_drive": { "sku": "goBILDA-5203-2402-0019", "ratio": 19.2, "maxTicksPerSecond": 2796.0 },
-    "right_front_drive": { "sku": "goBILDA-5203-2402-0019", "ratio": 19.2, "maxTicksPerSecond": 2796.0 },
-    "left_back_drive": { "sku": "goBILDA-5203-2402-0019", "ratio": 19.2, "maxTicksPerSecond": 2796.0 },
-    "right_back_drive": { "sku": "goBILDA-5203-2402-0019", "ratio": 19.2, "maxTicksPerSecond": 2796.0 },
-    "arm_motor": { "sku": "goBILDA-5203-2402-0050.9", "ratio": 50.9, "maxTicksPerSecond": 2779.0 },
-    "slide_motor": { "sku": "goBILDA-5203-2402-0050.9", "ratio": 50.9, "maxTicksPerSecond": 2779.0 }
+    "left_front_drive": { "sku": "goBILDA-5203-2402-0019", "ratio": 19.2, "tauStallNm": 2.383, "iStallAmps": 9.2, "omegaNoLoadRadS": 32.67, "vNominal": 12.0, "encoderCountsPerRev": 537.7 },
+    "right_front_drive": { "sku": "goBILDA-5203-2402-0019", "ratio": 19.2, "tauStallNm": 2.383, "iStallAmps": 9.2, "omegaNoLoadRadS": 32.67, "vNominal": 12.0, "encoderCountsPerRev": 537.7 },
+    "left_back_drive": { "sku": "goBILDA-5203-2402-0019", "ratio": 19.2, "tauStallNm": 2.383, "iStallAmps": 9.2, "omegaNoLoadRadS": 32.67, "vNominal": 12.0, "encoderCountsPerRev": 537.7 },
+    "right_back_drive": { "sku": "goBILDA-5203-2402-0019", "ratio": 19.2, "tauStallNm": 2.383, "iStallAmps": 9.2, "omegaNoLoadRadS": 32.67, "vNominal": 12.0, "encoderCountsPerRev": 537.7 },
+    "arm_motor": { "sku": "goBILDA-5203-2402-0050.9", "ratio": 50.9, "tauStallNm": 6.71, "iStallAmps": 9.2, "omegaNoLoadRadS": 12.25, "vNominal": 12.0, "encoderCountsPerRev": 1425.1 },
+    "slide_motor": { "sku": "goBILDA-5203-2402-0050.9", "ratio": 50.9, "tauStallNm": 6.71, "iStallAmps": 9.2, "omegaNoLoadRadS": 12.25, "vNominal": 12.0, "encoderCountsPerRev": 1425.1 }
   }
 }

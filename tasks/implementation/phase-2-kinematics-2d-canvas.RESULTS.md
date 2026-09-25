@@ -76,7 +76,7 @@ Second independent run: `ChassisPose(x=1.0079m, y=-1.0051m, heading=0.00deg)` �
 
 ## Open Issues for Phase 3
 
-1. Phase 3's motor model replaces the direct `power → kinematics.forward()` pipeline with real torque/speed (R4). Confirm the kinematics interface (`forward(power...)`) still fits once motor velocity, not commanded power, is the more physically accurate input — may need a `forward(wheelAngularVelocity...)` overload alongside the existing one, not a replacement.
+1. ~~Phase 3's motor model replaces the direct `power → kinematics.forward()` pipeline...~~ — resolved in Phase 3: added `forwardFromWheelSpeeds(...)` alongside the existing `forward(power...)`, exactly as anticipated here, plus a real bug this exposed (direction-reversed wheels breaking kinematics) that this note didn't anticipate. See Phase 3's RESULTS.md.
 2. Harden the `SimDcMotorEx` power-field concurrency note above before Phase 3 adds more state that's read across threads (battery current draw, thermal state).
 3. Real joystick hardware validation remains open — worth a quick manual check whenever a physical controller is available, though not blocking.
 

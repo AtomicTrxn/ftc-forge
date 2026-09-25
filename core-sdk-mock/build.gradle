@@ -1,3 +1,11 @@
-// Mocked FTC SDK -- no external dependencies (matches the real FTC SDK's own dependency-free
-// public API surface). MiniJson stays for now; replace with a real JSON library here once
+// Mocked FTC SDK. MiniJson stays for now; replace with a real JSON library here once
 // there's a reason to (see Phase 1's RESULTS.md deviation note).
+//
+// Phase 3 adds a dependency on physics-engine: simcore's device backing implementations
+// (SimDcMotorEx, etc.) now use the real motor/battery/latency models from R4 instead of
+// Phase 1's placeholder integration. This is a one-way dependency (core-sdk-mock's real
+// API surface itself -- the com.qualcomm.*/org.firstinspires.* packages -- stays free of
+// it; only the internal simcore.* package depends on physics-engine).
+dependencies {
+    implementation project(':physics-engine')
+}

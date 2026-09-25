@@ -1,5 +1,7 @@
 package simcore;
 
+import physics.MotorSpec;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,12 +11,12 @@ import java.util.Map;
 /**
  * Hand-authored preset robot config (Phase 1 scope, NOT R6's full CAD/URDF importer --
  * that's Phase 5). Carries a per-motor SKU/ratio field the real robot-config XML can't
- * express (per R3/R4's finding) so R4's motor model constants can be looked up correctly
- * once Phase 3 wires the real physics in.
+ * express (per R3/R4's finding), plus the real datasheet constants R4's motor model
+ * (Phase 3) needs: stall torque/current, no-load speed, nominal voltage, encoder CPR.
  */
 public class PresetRobotConfig {
     public String name;
-    public final Map<String, SimDcMotorEx.MotorSpec> motors = new LinkedHashMap<>();
+    public final Map<String, MotorSpec> motors = new LinkedHashMap<>();
 
     @SuppressWarnings("unchecked")
     public static PresetRobotConfig load(Path path) throws IOException {
@@ -28,8 +30,13 @@ public class PresetRobotConfig {
                 Map<String, Object> m = (Map<String, Object>) e.getValue();
                 String sku = (String) m.get("sku");
                 double ratio = ((Number) m.get("ratio")).doubleValue();
-                double maxTicksPerSecond = ((Number) m.get("maxTicksPerSecond")).doubleValue();
-                config.motors.put(e.getKey(), new SimDcMotorEx.MotorSpec(sku, ratio, maxTicksPerSecond));
+                double tauStallNm = ((Number) m.get("tauStallNm")).doubleValue();
+                double iStallAmps = ((Number) m.get("iStallAmps")).doubleValue();
+                double omegaNoLoadRadS = ((Number) m.get("omegaNoLoadRadS")).doubleValue();
+                double vNominal = ((Number) m.get("vNominal")).doubleValue();
+                double encoderCountsPerRev = ((Number) m.get("encoderCountsPerRev")).doubleValue();
+                config.motors.put(e.getKey(), new MotorSpec(
+                    sku, ratio, tauStallNm, iStallAmps, omegaNoLoadRadS, vNominal, encoderCountsPerRev));
             }
         }
         return config;
