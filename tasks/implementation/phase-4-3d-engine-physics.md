@@ -1,7 +1,7 @@
 # Task P4: 3D Engine & Physics
 
 **Type:** Implementation
-**Depends on (research):** [`tasks/research/02-engine-tech-stack-decision.RESULTS.md`](../research/02-engine-tech-stack-decision.RESULTS.md) — the specific physics engine binding (e.g. Rapier-Java vs Rapier.js) chosen there.
+**Depends on (research):** [`tasks/research/02-engine-tech-stack-decision.RESULTS.md`](../research/02-engine-tech-stack-decision.RESULTS.md) — the specific physics/rendering stack chosen there (Libbulletjme + jMonkeyEngine/Minie), plus its Mecanum-drivetrain modeling constraint (drivetrain forces applied at the chassis, not through wheel-contact physics) that this phase must follow.
 **Depends on (prior phase):** [`tasks/implementation/phase-3-sensor-latency-noise.RESULTS.md`](phase-3-sensor-latency-noise.RESULTS.md)
 **Produces:**
 - Code: `physics-engine/rigid-body/`, `gui-runner/3d-renderer/`.

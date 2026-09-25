@@ -70,7 +70,7 @@ Steps below are sequenced by **dependency**, not by topic, so the decisions that
 * **Goal:** Choose Desktop JVM vs. Web/WASM, using Step 1's findings — this single decision gates the classloading strategy, physics engine, and rendering stack.
 * **Action Items:**
   * Feed Step 1's Android-coupling audit into the Option A/B comparison: any third-party library that breaks under CheerpJ/TeaVM is a hard strike against Option B for true zero-refactor.
-  * **Option A (Desktop):** JavaFX / LibGDX + JBullet / Rapier-Java (native bytecode execution; easiest zero-refactor path).
+  * **Option A (Desktop):** jMonkeyEngine + Minie/Libbulletjme (native bytecode execution; easiest zero-refactor path). *(Updated per R2's research: the originally-listed JBullet is unmaintained since 2013, and "Rapier-Java" does not exist as a real off-the-shelf dependency — see [R2's results](tasks/research/02-engine-tech-stack-decision.RESULTS.md).)*
   * **Option B (Web):** Three.js + Rapier.js + TeaVM / CheerpJ (zero installation; requires transpiling user code, which reintroduces the friction the project is trying to remove).
   * Build the 50 Hz motor-loop micro-prototype only on whichever option Step 1's audit doesn't already eliminate.
 * **Open questions:**

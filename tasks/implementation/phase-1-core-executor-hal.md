@@ -20,10 +20,12 @@ This is the first buildable phase and the riskiest assumption in the whole proje
 
 ## Objective
 
-1. A mocked `com.qualcomm.robotcore` package covering the classes R1 inventoried.
-2. A headless `OpMode` executor: loads a team's code per R3's mechanism, drives the `init()`/`start()`/`loop()`/`stop()` lifecycle, and runs it against the mock.
-3. Basic console logging of `Telemetry` output and motor/servo commands.
-4. 2–3 hand-authored preset robot configs (a static, minimal format — **not** R6's full importer; that's Phase 5) so there's something for an OpMode to actually drive.
+1. A mocked `com.qualcomm.robotcore` package covering the classes R1 inventoried (this now explicitly includes no-op stub classes for vision — `VisionPortal`, `AprilTagProcessor`, etc. — since R1's amended results clarify that "vision deferred" means no simulated camera, not missing classes; real team code that merely constructs a `VisionPortal` in `init()` must still compile).
+2. A headless `OpMode` executor: loads a team's code per R3's mechanism (including R3's third-party dependency resolution — team code importing Road Runner/Pedro/FTCDashboard must compile, not just the team's own source), drives the `init()`/`start()`/`loop()`/`stop()` lifecycle, and runs it against the mock.
+3. **An `FtcDashboard`-compatible shim** (per R1's findings): a from-scratch implementation of the real `FtcDashboard`'s public API (`getInstance()`, `getTelemetry()`, `@Config` static-field scanning, `TelemetryPacket`), backed by the real, portable `DashboardCore` library, without the real class's Android-lifecycle machinery. This is required for Phase 1, not a later nice-to-have — R1 found that the standard Road Runner quickstart bundles FTCDashboard by default, so any quickstart-based team's code won't compile without it.
+4. Basic console logging of `Telemetry` output and motor/servo commands.
+5. 2–3 hand-authored preset robot configs (a static, minimal format — **not** R6's full importer; that's Phase 5) so there's something for an OpMode to actually drive. Include a per-motor SKU/ratio field even in this minimal format, since R3/R4 found the real robot-configuration XML likely can't carry gear-ratio information on its own.
+6. A watchdog for runaway OpMode threads, per R3's design (daemon thread + dead-session isolation — `Thread.stop()` is not usable as of JDK 20+, confirmed in R2).
 
 ## Instructions
 
@@ -49,7 +51,9 @@ Save `tasks/implementation/phase-1-core-executor-hal.RESULTS.md` with:
 ## Definition of done
 
 - [ ] All three research RESULTS files read and referenced.
-- [ ] Mock SDK covers at minimum the classes R1 marked required.
+- [ ] Mock SDK covers at minimum the classes R1 marked required, including the vision stub classes and the FtcDashboard shim.
 - [ ] A real/realistic sample OpMode runs headlessly end-to-end with correct console output.
-- [ ] 2-3 preset configs exist and are loadable.
+- [ ] A Road-Runner-quickstart-style sample (importing FTCDashboard) compiles and runs against the shim.
+- [ ] 2-3 preset configs exist, are loadable, and carry a per-motor SKU/ratio field.
+- [ ] A deliberately-hung OpMode is confirmed not to wedge the whole executor (watchdog isolates it).
 - [ ] RESULTS.md saved at the path above.

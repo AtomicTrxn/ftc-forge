@@ -8,6 +8,7 @@ This directory breaks the [project plan](../Next-Gen%20FTC%20Robot%20Simulator%2
 - A dependency's RESULTS file may not exist yet if that task hasn't run. Task files still link to the *expected* path — check whether it exists before starting; if it doesn't, that dependency needs to run first.
 - When a task completes, its RESULTS.md is saved alongside its spec file, in the same directory, so the pair travels together.
 - Later tasks — especially implementation phases — read the RESULTS files of the research steps they depend on, rather than re-deriving decisions already made. This is the "dynamic link back" mechanism: the spec doesn't hardcode the research's conclusions, it points at the file that holds them, so if a research task is redone or updated, downstream tasks automatically pick up the new answer next time they run.
+- **This only works if amendments actually remove what they supersede.** A cross-file review pass (e.g. R2 resolving something R1 had flagged as an open risk) must update or delete every statement in the other file that the new finding contradicts, not just add a note — a downstream reader has no way to know an "unresolved" risk was quietly fixed elsewhere unless the file that stated it is corrected too. When amending a RESULTS file for this reason, add a one-line **Changelog** entry at the top (what changed and why) so the amendment itself is visible, not just its effect.
 
 ## Execution order & dependency graph
 

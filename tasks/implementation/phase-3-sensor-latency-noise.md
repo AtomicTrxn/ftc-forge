@@ -28,7 +28,7 @@ This is the first phase past the MVP checkpoint — confirm Phase 2's "Recommend
 2. Read R5's RESULTS — implement the telemetry log schema as an import format, and build the calibration pass it specifies (even a simple least-squares/grid-search fit, as R5 should have scoped).
 3. Wire the motor model into Phase 2's kinematics so that commanded power now produces realistic torque/speed rather than an idealized instant response.
 4. Wire the battery sag model so total current draw across all active motors reduces effective voltage, feeding back into motor torque.
-5. If sensor latency is in scope for this phase: implement the async thread-safe queue R4 spec'd, and route IMU/encoder reads through it with configurable delay.
+5. If sensor latency is in scope for this phase: implement the deterministic per-sensor ring buffer R4 spec'd (revised from an earlier wall-clock `DelayQueue` design specifically because it must run on the simulator's own clock, not real time), and route IMU/encoder reads through it with configurable delay.
 6. **Validate calibration:** produce (or obtain) a sample real-robot telemetry log in R5's schema, run it through the calibration pass, and confirm it converges to a reasonable parameter fit rather than diverging or erroring.
 
 ## Output contract
