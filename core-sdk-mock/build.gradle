@@ -1,0 +1,3 @@
+// Mocked FTC SDK -- no external dependencies (matches the real FTC SDK's own dependency-free
+// public API surface). MiniJson stays for now; replace with a real JSON library here once
+// there's a reason to (see Phase 1's RESULTS.md deviation note).

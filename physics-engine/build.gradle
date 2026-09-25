@@ -1,0 +1,13 @@
+// Kinematics (Phase 2) and, later, motor/battery non-ideality models (Phase 3) and
+// Libbulletjme-backed rigid-body physics (Phase 4). No external dependencies yet --
+// Phase 2's kinematics module is pure math.
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.10.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+test {
+    useJUnitPlatform()
+}
+

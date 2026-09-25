@@ -1,0 +1,21 @@
+// Root build config shared by all modules.
+// NOTE: R2 targets JDK 21 LTS; this build environment only has JDK 17 available
+// (same documented deviation as Phase 1's RESULTS.md). Bump to 21 once available.
+allprojects {
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+
+    java {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+}

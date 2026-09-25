@@ -1,0 +1,27 @@
+// Headless executor (Phase 1) + jMonkeyEngine renderer (Phase 2, per R2's engine decision).
+plugins {
+    id 'application'
+}
+
+dependencies {
+    implementation project(':core-sdk-mock')
+    implementation project(':physics-engine')
+
+    def jme3 = [v: '3.7.0-stable', g: 'org.jmonkeyengine']
+    implementation "${jme3.g}:jme3-core:${jme3.v}"
+    runtimeOnly "${jme3.g}:jme3-desktop:${jme3.v}"
+    runtimeOnly "${jme3.g}:jme3-lwjgl3:${jme3.v}"
+}
+
+application {
+    mainClass = 'simrunner.Main'
+}
+
+tasks.register('runSimulatorApp', JavaExec) {
+    group = 'application'
+    description = 'Launches the jME 2D-canvas (orthographic) simulator window (Phase 2).'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'simrunner.SimulatorApp'
+    // GLFW/AWT on macOS require windowing calls on the process's first thread.
+    jvmArgs = ['-XstartOnFirstThread']
+}

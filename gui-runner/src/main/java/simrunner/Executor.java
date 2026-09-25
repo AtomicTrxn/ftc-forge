@@ -25,12 +25,22 @@ public class Executor {
         public Throwable failure;
     }
 
-    /** Runs a LinearOpMode on its own thread, exactly like the real SDK (per R1), with watchdog isolation. */
-    public static RunResult runLinearOpMode(OpModeDiscovery.DiscoveredOpMode discovered,
-                                             HardwareMap hardwareMap,
-                                             Telemetry telemetry,
-                                             Gamepad gamepad1, Gamepad gamepad2,
-                                             long watchdogTimeoutMillis) throws Exception {
+    /** A running (or finished) OpMode session -- lets a live render loop (Phase 2) poll state without blocking. */
+    public static class Session {
+        public final Thread opModeThread;
+        public final RunResult result;
+        Session(Thread opModeThread, RunResult result) {
+            this.opModeThread = opModeThread;
+            this.result = result;
+        }
+        public boolean isAlive() { return opModeThread.isAlive(); }
+    }
+
+    /** Starts a LinearOpMode on its own thread and returns immediately -- does not block on the watchdog. */
+    public static Session start(OpModeDiscovery.DiscoveredOpMode discovered,
+                                 HardwareMap hardwareMap,
+                                 Telemetry telemetry,
+                                 Gamepad gamepad1, Gamepad gamepad2) throws Exception {
         OpMode instance = discovered.opModeClass.getDeclaredConstructor().newInstance();
         instance.hardwareMap = hardwareMap;
         instance.telemetry = telemetry;
@@ -55,7 +65,7 @@ public class Executor {
         }, "opmode-" + discovered.className);
         opModeThread.setDaemon(true);
 
-        // Background motor-tick loop, standing in for Phase 2's real fixed-timestep sim loop.
+        // Background motor-tick loop, standing in for a real fixed-timestep sim loop.
         Thread tickThread = new Thread(() -> {
             while (opModeThread.isAlive()) {
                 HardwareMapBuilder.tickMotors(hardwareMap);
@@ -72,13 +82,24 @@ public class Executor {
         Thread.sleep(50);
         linear.internalSignalStart();
 
-        Watchdog watchdog = new Watchdog(opModeThread, watchdogTimeoutMillis);
-        watchdog.start();
-        result.watchdogTriggered = watchdog.isSessionDead();
+        return new Session(opModeThread, result);
+    }
 
-        if (result.failure != null) {
-            throw new RuntimeException("OpMode " + discovered.className + " threw", result.failure);
+    /** Runs a LinearOpMode on its own thread, exactly like the real SDK (per R1), blocking until it finishes or the watchdog fires. */
+    public static RunResult runLinearOpMode(OpModeDiscovery.DiscoveredOpMode discovered,
+                                             HardwareMap hardwareMap,
+                                             Telemetry telemetry,
+                                             Gamepad gamepad1, Gamepad gamepad2,
+                                             long watchdogTimeoutMillis) throws Exception {
+        Session session = start(discovered, hardwareMap, telemetry, gamepad1, gamepad2);
+
+        Watchdog watchdog = new Watchdog(session.opModeThread, watchdogTimeoutMillis);
+        watchdog.start();
+        session.result.watchdogTriggered = watchdog.isSessionDead();
+
+        if (session.result.failure != null) {
+            throw new RuntimeException("OpMode " + discovered.className + " threw", session.result.failure);
         }
-        return result;
+        return session.result;
     }
 }

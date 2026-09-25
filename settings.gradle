@@ -1,0 +1,5 @@
+rootProject.name = 'ftc-forge'
+
+include 'core-sdk-mock'
+include 'physics-engine'
+include 'gui-runner'
