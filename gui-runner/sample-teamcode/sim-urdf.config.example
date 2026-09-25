@@ -1,0 +1,8 @@
+{
+  "sourceRoot": "TeamCode/src/main/java",
+  "robotConfig": "robot_config.xml",
+  "presetMotors": "preset_motors.json",
+  "urdf": "robot.urdf",
+  "total_mass_kg": 11.0,
+  "extraClasspath": []
+}

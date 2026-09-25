@@ -27,6 +27,7 @@ import simcore.ConsoleTelemetry;
 import simcore.HardwareMapBuilder;
 import simcore.PresetRobotConfig;
 import simcore.RobotConfigXml;
+import simcore.RobotUrdf;
 
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -65,8 +66,10 @@ public class SimulatorApp extends SimpleApplication {
     private double[] wheelVisualAngleRad;
     private BulletAppState bulletAppState;
     private PhysicsWorld physicsWorld;
+    private ImportedRobotScene importedScene;
     private Executor.Session opModeSession;
     private String[] motorNames;
+    private final double[] wheelRadii = {WHEEL_RADIUS_M, WHEEL_RADIUS_M, WHEEL_RADIUS_M, WHEEL_RADIUS_M};
 
     public SimulatorApp(Path projectDir, String opModeName) {
         this.projectDir = projectDir;
@@ -92,9 +95,6 @@ public class SimulatorApp extends SimpleApplication {
         setUpPerspectiveCamera();
         buildField();
         physicsWorld.buildFieldBoundary();
-        buildRobot();
-        physicsWorld.buildChassis(robotNode, CHASSIS_MASS_KG, new Vector3f(0, 0.1f, 0));
-        physicsWorld.buildGamePiece(new Vector3f(0.8f, 0.05f, 0));
         bindGamepadControls();
         try {
             loadRobotAndStartOpMode();
@@ -211,9 +211,57 @@ public class SimulatorApp extends SimpleApplication {
         RobotConfigXml xml = RobotConfigXml.parse(projectDir.resolve(simConfig.robotConfig).toFile());
         PresetRobotConfig preset = PresetRobotConfig.load(projectDir.resolve(simConfig.presetMotors));
         hardwareMap = HardwareMapBuilder.build(xml, preset);
+        double trackWidthM = 0.30, wheelBaseM = 0.35;
+
+        if (simConfig.urdf != null) {
+            Path urdfPath = projectDir.resolve(simConfig.urdf);
+            RobotUrdf urdf = RobotUrdf.parse(urdfPath);
+            if (simConfig.totalMassKg != null) urdf = urdf.withTotalMassKg(simConfig.totalMassKg);
+            urdf.validateHardwareMap(hardwareMap);
+            importedScene = new ImportedRobotScene(urdf, urdfPath, hardwareMap, assetManager, simConfig.vhacdMaxHulls);
+            robotNode = importedScene.root;
+            rootNode.attachChild(robotNode);
+            physicsWorld.buildChassis(robotNode, urdf.totalMassKg(), new Vector3f(0, 0.1f, 0),
+                importedScene.chassisShape());
+            physicsWorld.setChassisInertia(importedScene.inertiaDiagonal());
+            System.out.println("[IMPORT] Physics chassis from " + urdf.name + ", mass=" + urdf.totalMassKg() + "kg");
+            double[] wheelX = new double[4], wheelY = new double[4];
+            boolean[] wheelFound = new boolean[4];
+            String[] drives = {"left_front_drive", "right_front_drive", "left_back_drive", "right_back_drive"};
+            for (RobotUrdf.Transmission tx : urdf.transmissions.values()) {
+                RobotUrdf.Joint joint = urdf.joints.get(tx.joint());
+                if (!joint.type().equals("continuous")) continue;
+                for (RobotUrdf.Actuator actuator : tx.actuators()) {
+                    for (int i = 0; i < 4; i++) {
+                        if (!actuator.name().equals(drives[i])) continue;
+                        if (joint.parent().equals(urdf.rootLink)) {
+                            wheelX[i] = joint.origin().xyz()[0];
+                            wheelY[i] = joint.origin().xyz()[1];
+                            wheelFound[i] = true;
+                        }
+                        for (RobotUrdf.Collision c : urdf.links.get(joint.child()).collisions()) {
+                            if (c.geometry().kind().equals("cylinder")) wheelRadii[i] = c.geometry().dimensions()[0];
+                        }
+                    }
+                }
+            }
+            if (wheelFound[0] && wheelFound[1] && wheelFound[2] && wheelFound[3]) {
+                trackWidthM = (Math.abs(wheelY[0] - wheelY[1]) + Math.abs(wheelY[2] - wheelY[3])) / 2;
+                wheelBaseM = (Math.abs(wheelX[0] - wheelX[2]) + Math.abs(wheelX[1] - wheelX[3])) / 2;
+                if (trackWidthM <= 0 || wheelBaseM <= 0)
+                    throw new IllegalArgumentException("Imported drive-wheel layout has zero track width or wheelbase");
+                System.out.println("[IMPORT] Mecanum track=" + trackWidthM + "m wheelbase=" + wheelBaseM + "m");
+            } else {
+                System.out.println("[WARN] Could not derive all four drive-wheel positions from chassis-child joints; using preset kinematics dimensions.");
+            }
+        } else {
+            buildRobot();
+            physicsWorld.buildChassis(robotNode, CHASSIS_MASS_KG, new Vector3f(0, 0.1f, 0));
+        }
+        physicsWorld.buildGamePiece(new Vector3f(0.8f, 0.05f, 0));
 
         motorNames = new String[]{"left_front_drive", "right_front_drive", "left_back_drive", "right_back_drive"};
-        kinematics = new MecanumKinematics(0.30, 0.35, 2.0);
+        kinematics = new MecanumKinematics(trackWidthM, wheelBaseM, 2.0);
 
         Telemetry telemetry = new ConsoleTelemetry();
         opModeSession = Executor.start(target, hardwareMap, telemetry, gamepad1, gamepad2);
@@ -233,11 +281,17 @@ public class SimulatorApp extends SimpleApplication {
         };
         double[] wheelSpeeds = new double[4];
         for (int i = 0; i < 4; i++) {
-            wheelSpeeds[i] = wheelLinearSpeed(driveMotors[i]);
-            wheelVisualAngleRad[i] += (wheelSpeeds[i] / WHEEL_VISUAL_RADIUS_M) * tpf;
-            wheelGeoms[i].setLocalRotation(
-                new Quaternion().fromAngleAxis(FastMath.HALF_PI, Vector3f.UNIT_X)
-                    .mult(new Quaternion().fromAngleAxis((float) wheelVisualAngleRad[i], Vector3f.UNIT_Z)));
+            wheelSpeeds[i] = wheelLinearSpeed(driveMotors[i], wheelRadii[i]);
+            if (importedScene == null) {
+                wheelVisualAngleRad[i] += (wheelSpeeds[i] / WHEEL_VISUAL_RADIUS_M) * tpf;
+                wheelGeoms[i].setLocalRotation(
+                    new Quaternion().fromAngleAxis(FastMath.HALF_PI, Vector3f.UNIT_X)
+                        .mult(new Quaternion().fromAngleAxis((float) wheelVisualAngleRad[i], Vector3f.UNIT_Z)));
+            }
+        }
+        if (importedScene != null) {
+            importedScene.update();
+            physicsWorld.setChassisInertia(importedScene.inertiaDiagonal());
         }
 
         MecanumKinematics.ChassisVelocity v = kinematics.forwardFromWheelSpeeds(
@@ -278,11 +332,11 @@ public class SimulatorApp extends SimpleApplication {
      * with Direction.REVERSE set -- caught by an actual renderer run producing a stuck,
      * spinning-in-place robot instead of driving, not assumed correct in advance.
      */
-    private double wheelLinearSpeed(DcMotorEx motor) {
+    private double wheelLinearSpeed(DcMotorEx motor, double radiusM) {
         if (motor instanceof simcore.SimDcMotorEx) {
             double physicalOmega = ((simcore.SimDcMotorEx) motor).getOmegaRadS();
             double logicalOmega = motor.getDirection() == DcMotorSimple.Direction.FORWARD ? physicalOmega : -physicalOmega;
-            return logicalOmega * WHEEL_RADIUS_M;
+            return logicalOmega * radiusM;
         }
         return motor.getPower() * kinematics.maxWheelSpeedMetersPerSecond; // fallback, shouldn't hit in this simulator
     }

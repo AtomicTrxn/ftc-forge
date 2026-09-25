@@ -18,6 +18,9 @@ public class SimConfig {
     public String sourceRoot = "TeamCode/src/main/java";
     public String robotConfig;
     public String presetMotors;
+    public String urdf;
+    public Double totalMassKg;
+    public int vhacdMaxHulls = 8;
     public final List<String> extraClasspath = new ArrayList<>();
 
     @SuppressWarnings("unchecked")
@@ -28,6 +31,11 @@ public class SimConfig {
         if (root.containsKey("sourceRoot")) config.sourceRoot = (String) root.get("sourceRoot");
         if (root.containsKey("robotConfig")) config.robotConfig = (String) root.get("robotConfig");
         if (root.containsKey("presetMotors")) config.presetMotors = (String) root.get("presetMotors");
+        if (root.containsKey("urdf")) config.urdf = (String) root.get("urdf");
+        if (root.containsKey("total_mass_kg")) config.totalMassKg = ((Number) root.get("total_mass_kg")).doubleValue();
+        if (root.containsKey("vhacd_max_hulls")) config.vhacdMaxHulls = ((Number) root.get("vhacd_max_hulls")).intValue();
+        if (config.vhacdMaxHulls < 1 || config.vhacdMaxHulls > 16)
+            throw new IllegalArgumentException("vhacd_max_hulls must be between 1 and 16");
         if (root.containsKey("extraClasspath")) {
             for (Object o : (List<Object>) root.get("extraClasspath")) {
                 config.extraClasspath.add((String) o);
