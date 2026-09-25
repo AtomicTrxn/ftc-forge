@@ -11,6 +11,11 @@ dependencies {
     implementation "${jme3.g}:jme3-core:${jme3.v}"
     runtimeOnly "${jme3.g}:jme3-desktop:${jme3.v}"
     runtimeOnly "${jme3.g}:jme3-lwjgl3:${jme3.v}"
+
+    // Phase 4: Libbulletjme-backed rigid-body physics via Minie (per R2's engine decision).
+    // Minie bundles Libbulletjme's native code (incl. V-HACD) directly, so no separate
+    // Libbulletjme dependency is needed.
+    implementation 'com.github.stephengold:Minie:9.0.3'
 }
 
 application {
@@ -23,5 +28,21 @@ tasks.register('runSimulatorApp', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'simrunner.SimulatorApp'
     // GLFW/AWT on macOS require windowing calls on the process's first thread.
+    jvmArgs = ['-XstartOnFirstThread']
+}
+
+tasks.register('runPhysicsSmokeTest', JavaExec) {
+    group = 'application'
+    description = 'De-risking smoke test for Phase 4: drops a box onto a floor via Minie/Bullet.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'simrunner.PhysicsSmokeTestApp'
+    jvmArgs = ['-XstartOnFirstThread']
+}
+
+tasks.register('runVhacdSmokeTest', JavaExec) {
+    group = 'application'
+    description = 'Debug: does a V-HACD-decomposed torus fall onto a floor correctly?'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'simrunner.VhacdSmokeTestApp'
     jvmArgs = ['-XstartOnFirstThread']
 }
