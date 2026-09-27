@@ -81,7 +81,7 @@ public class HardwareMapBuilder {
 
         List<BatteryModel.MotorState> states = new ArrayList<>();
         for (SimDcMotorEx m : motors) {
-            states.add(new BatteryModel.MotorState(m.commandedPower(), m.getSpec(), m.getOmegaRadS()));
+            states.add(new BatteryModel.MotorState(m.signedCommandedPower(), m.getSpec(), m.getOmegaRadS()));
         }
         double batteryVoltage = BATTERY.solveBatteryVoltage(states);
 

@@ -16,6 +16,7 @@ dependencies {
     // Minie bundles Libbulletjme's native code (incl. V-HACD) directly, so no separate
     // Libbulletjme dependency is needed.
     implementation 'com.github.stephengold:Minie:9.0.3'
+    testImplementation "${jme3.g}:jme3-desktop:${jme3.v}"
     testImplementation platform('org.junit:junit-bom:5.10.3')
     testImplementation 'org.junit.jupiter:junit-jupiter'
 }

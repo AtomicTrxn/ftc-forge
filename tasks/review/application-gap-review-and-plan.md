@@ -54,3 +54,7 @@ Real FTC CAD export and Control Hub XML, real telemetry collection/calibration, 
 - In the real 3D renderer, `TurnAndResetOpMode` reported `Yaw before reset : 106.919...` degrees and `Yaw after reset : 0.0`; the chassis stayed near the origin while turning.
 - Existing 3D `BasicMecanumOpMode` completed its forward and strafe phases at chassis position `(0.712, 0.098, 0.700)` m. `IntakeDemoOpMode` finished with `gamePieceHeld=true`.
 - The root README and robot import guide now use wrapper commands and document the actual IMU/CAD limits.
+
+## Physics follow-up
+
+The drivetrain push response and independent moving-mechanism contacts listed above are implemented in [the physics follow-up](../physics/PLAN.md), with native Bullet tests and renderer evidence. The CAD export and real robot calibration gaps remain.

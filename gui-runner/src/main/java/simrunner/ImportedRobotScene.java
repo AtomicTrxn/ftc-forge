@@ -27,18 +27,22 @@ import java.nio.FloatBuffer;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.List;
+import java.util.ArrayList;
+import com.jme3.math.Transform;
+import com.jme3.bullet.collision.shapes.EmptyShape;
 
-/** Visual URDF link tree and chassis collision made from its rigid, fixed-link subtree. */
+/** URDF geometry grouped into fixed subtrees for articulated rigid-body construction. */
 final class ImportedRobotScene {
     private static final Quaternion BASIS = new Quaternion().fromAngleAxis(-FastMath.HALF_PI, Vector3f.UNIT_X);
-    private final RobotUrdf urdf;
+    final RobotUrdf urdf;
     private final Path urdfPath;
-    private final HardwareMap hardwareMap;
+    final HardwareMap hardwareMap;
     private final AssetManager assets;
     private final int vhacdMaxHulls;
     final Node root = new Node("imported-robot");
     private final Map<String, Node> jointNodes = new LinkedHashMap<>();
-    private final Map<String, Node> linkNodes = new LinkedHashMap<>();
+    final Map<String, Node> linkNodes = new LinkedHashMap<>();
 
     ImportedRobotScene(RobotUrdf urdf, Path urdfPath, HardwareMap hardwareMap, AssetManager assets,
                        int vhacdMaxHulls) throws Exception {
@@ -77,12 +81,12 @@ final class ImportedRobotScene {
 
     void update() {
         for (RobotUrdf.Joint joint : urdf.joints.values()) {
-            if (joint.type().equals("fixed")) continue;
+            if (joint.type().equals("fixed") || !wheelLinks.contains(joint.child())) continue;
             Node mount = jointNodes.get(joint.name());
             double value = urdf.jointPosition(joint.name(), hardwareMap);
             Vector3f axis = position(joint.axis()).normalizeLocal();
             if (joint.type().equals("prismatic")) {
-                mount.setLocalTranslation(position(joint.origin().xyz()).add(axis.mult((float) value)));
+                mount.setLocalTranslation(position(joint.origin().xyz()).add(rotation(joint.origin().rpy()).mult(axis.mult((float) value))));
             } else {
                 mount.setLocalRotation(rotation(joint.origin().rpy())
                     .mult(new Quaternion().fromAngleAxis((float) value, axis)));
@@ -90,64 +94,86 @@ final class ImportedRobotScene {
         }
     }
 
-    /** Aggregate CAD inertia about the chassis origin, including current mechanism positions. */
-    Vector3f inertiaDiagonal() {
-        root.updateGeometricState();
-        double[] diagonal = new double[3];
-        for (RobotUrdf.Link link : urdf.links.values()) {
-            Node node = linkNodes.get(link.name());
-            Vector3f comWorld = node.getWorldTranslation().add(
-                node.getWorldRotation().mult(position(link.inertialOrigin().xyz())));
-            Vector3f com = root.worldToLocal(comWorld, null);
-            Quaternion q = root.getWorldRotation().inverse().mult(node.getWorldRotation())
-                .mult(rotation(link.inertialOrigin().rpy()));
-            com.jme3.math.Matrix3f r = q.toRotationMatrix();
-            double[][] matrix = {
-                {link.inertia().ixx(), link.inertia().ixz(), -link.inertia().ixy()},
-                {link.inertia().ixz(), link.inertia().izz(), -link.inertia().iyz()},
-                {-link.inertia().ixy(), -link.inertia().iyz(), link.inertia().iyy()}
-            };
-            double[][] rows = new double[3][3];
-            for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) rows[i][j] = r.get(i, j);
-            for (int a = 0; a < 3; a++) {
-                for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++)
-                    diagonal[a] += rows[a][i] * matrix[i][j] * rows[a][j];
-            }
-            diagonal[0] += link.massKg() * (com.y * com.y + com.z * com.z);
-            diagonal[1] += link.massKg() * (com.x * com.x + com.z * com.z);
-            diagonal[2] += link.massKg() * (com.x * com.x + com.y * com.y);
-        }
-        for (double moment : diagonal) {
-            if (!Double.isFinite(moment) || moment <= 0)
-                throw new IllegalArgumentException("Imported URDF has non-positive aggregate inertia");
-        }
-        return new Vector3f((float) diagonal[0], (float) diagonal[1], (float) diagonal[2]);
+    record Part(String name, Node visual, Transform origin, Vector3f com, double mass,
+                Vector3f inertia, CollisionShape shape) { }
+    final Map<String, String> owners = new LinkedHashMap<>();
+    final java.util.Set<String> wheelLinks = new java.util.HashSet<>();
+
+    boolean isDriveWheel(RobotUrdf.Joint joint) {
+        return urdf.transmissions.values().stream().filter(t -> t.joint().equals(joint.name()))
+            .flatMap(t -> t.actuators().stream()).anyMatch(a -> List.of("left_front_drive",
+                "right_front_drive", "left_back_drive", "right_back_drive").contains(a.name()));
     }
 
-    /** Moving joints remain visual/encoder tracked; fixed link geometry is welded to chassis. */
-    CollisionShape chassisShape() throws Exception {
-        CompoundCollisionShape result = new CompoundCollisionShape();
-        addFixedCollision(urdf.rootLink, Vector3f.ZERO, new Quaternion(), result);
-        if (result.countChildren() == 0) throw new IllegalArgumentException("URDF chassis has no fixed collision geometry");
-        return result;
-    }
-
-    private void addFixedCollision(String linkName, Vector3f offset, Quaternion orientation,
-                                   CompoundCollisionShape result) throws Exception {
-        RobotUrdf.Link link = urdf.links.get(linkName);
-        for (RobotUrdf.Collision c : link.collisions()) {
-            Vector3f local = position(c.origin().xyz());
-            Vector3f translated = offset.add(orientation.mult(local));
-            Quaternion rotated = orientation.mult(rotation(c.origin().rpy()))
-                .mult(shapeAxisRotation(c.geometry()));
-            result.addChildShape(physicsShape(c.geometry()), translated, rotated.toRotationMatrix());
-        }
+    private void assignParts(String link, String owner, boolean wheelBranch) {
+        owners.put(link, owner);
+        if (wheelBranch) wheelLinks.add(link);
         for (RobotUrdf.Joint joint : urdf.joints.values()) {
-            if (!joint.parent().equals(linkName) || !joint.type().equals("fixed")) continue;
-            Vector3f childOffset = offset.add(orientation.mult(position(joint.origin().xyz())));
-            Quaternion childRotation = orientation.mult(rotation(joint.origin().rpy()));
-            addFixedCollision(joint.child(), childOffset, childRotation, result);
+            if (!joint.parent().equals(link)) continue;
+            boolean wheel = wheelBranch || isDriveWheel(joint);
+            boolean separate = !joint.type().equals("fixed") && !wheel;
+            assignParts(joint.child(), separate ? joint.child() : owner, wheel);
         }
+    }
+
+    /** Weld fixed subtrees and keep wheel mass as ballast without wheel-ground traction. */
+    List<Part> parts() throws Exception {
+        root.updateGeometricState();
+        owners.clear();
+        wheelLinks.clear();
+        assignParts(urdf.rootLink, urdf.rootLink, false);
+        List<Part> result = new ArrayList<>();
+        for (String name : new java.util.LinkedHashSet<>(owners.values())) {
+            Node originNode = linkNodes.get(name);
+            Transform origin = originNode.getWorldTransform().clone();
+            Quaternion inverse = origin.getRotation().inverse();
+            double mass = 0;
+            Vector3f weightedCom = new Vector3f();
+            Map<String, Vector3f> centers = new LinkedHashMap<>();
+            for (RobotUrdf.Link link : urdf.links.values()) {
+                if (!owners.get(link.name()).equals(name)) continue;
+                Node node = linkNodes.get(link.name());
+                Vector3f center = inverse.mult(node.localToWorld(position(link.inertialOrigin().xyz()), null)
+                    .subtract(origin.getTranslation()));
+                centers.put(link.name(), center);
+                weightedCom.addLocal(center.mult((float) link.massKg()));
+                mass += link.massKg();
+            }
+            if (mass <= 0) throw new IllegalArgumentException("Dynamic URDF subtree has no positive mass: " + name);
+            Vector3f com = weightedCom.divide((float) mass);
+            double[] diagonal = new double[3];
+            CompoundCollisionShape compound = new CompoundCollisionShape();
+            for (RobotUrdf.Link link : urdf.links.values()) {
+                if (!owners.get(link.name()).equals(name)) continue;
+                Node node = linkNodes.get(link.name());
+                Quaternion relative = inverse.mult(node.getWorldRotation());
+                Quaternion inertialRotation = relative.mult(rotation(link.inertialOrigin().rpy()));
+                var r = inertialRotation.toRotationMatrix();
+                double[][] tensor = {{link.inertia().ixx(), link.inertia().ixz(), -link.inertia().ixy()},
+                    {link.inertia().ixz(), link.inertia().izz(), -link.inertia().iyz()},
+                    {-link.inertia().ixy(), -link.inertia().iyz(), link.inertia().iyy()}};
+                for (int a = 0; a < 3; a++) for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++)
+                    diagonal[a] += r.get(a, i) * tensor[i][j] * r.get(a, j);
+                Vector3f offset = centers.get(link.name()).subtract(com);
+                diagonal[0] += link.massKg() * (offset.y * offset.y + offset.z * offset.z);
+                diagonal[1] += link.massKg() * (offset.x * offset.x + offset.z * offset.z);
+                diagonal[2] += link.massKg() * (offset.x * offset.x + offset.y * offset.y);
+                if (wheelLinks.contains(link.name())) continue;
+                for (RobotUrdf.Collision collision : link.collisions()) {
+                    Vector3f translation = inverse.mult(node.localToWorld(position(collision.origin().xyz()), null)
+                        .subtract(origin.getTranslation())).subtract(com);
+                    Quaternion orientation = relative.mult(rotation(collision.origin().rpy()))
+                        .mult(shapeAxisRotation(collision.geometry()));
+                    compound.addChildShape(physicsShape(collision.geometry()), translation, orientation.toRotationMatrix());
+                }
+            }
+            for (double moment : diagonal) if (!Double.isFinite(moment) || moment <= 0)
+                throw new IllegalArgumentException("Dynamic URDF subtree has invalid inertia: " + name);
+            CollisionShape shape = compound.countChildren() == 0 ? new EmptyShape(false) : compound;
+            result.add(new Part(name, originNode, origin, com, mass,
+                new Vector3f((float) diagonal[0], (float) diagonal[1], (float) diagonal[2]), shape));
+        }
+        return result;
     }
 
     private Mesh visualMesh(RobotUrdf.Geometry g) throws Exception {
@@ -207,7 +233,9 @@ final class ImportedRobotScene {
         return new Vector3f((float) xyz[0], (float) xyz[2], (float) -xyz[1]);
     }
     static Quaternion rotation(double[] rpy) {
-        Quaternion urdfRotation = new Quaternion().fromAngles((float) rpy[0], (float) rpy[1], (float) rpy[2]);
+        Quaternion urdfRotation = new Quaternion().fromAngleAxis((float) rpy[2], Vector3f.UNIT_Z)
+            .mult(new Quaternion().fromAngleAxis((float) rpy[1], Vector3f.UNIT_Y))
+            .mult(new Quaternion().fromAngleAxis((float) rpy[0], Vector3f.UNIT_X));
         return BASIS.mult(urdfRotation).mult(BASIS.inverse());
     }
 
