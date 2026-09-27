@@ -34,7 +34,7 @@ public final class RobotUrdf {
         }
     }
     public record Joint(String name, String type, String parent, String child, Pose origin,
-                        double[] axis, Double lower, Double upper) {}
+                        double[] axis, Double lower, Double upper, Double effort) {}
     public record Actuator(String name, double mechanicalReduction) {}
     public record Transmission(String name, String joint, List<Actuator> actuators) {}
 
@@ -139,7 +139,9 @@ public final class RobotUrdf {
             double[] xyz = axis == null ? new double[]{1, 0, 0} : vector(required(axis, "xyz"), 3);
             if (!type.equals("fixed") && xyz[0] == 0 && xyz[1] == 0 && xyz[2] == 0)
                 throw new IllegalArgumentException("Zero axis on joint " + name);
-            Joint joint = new Joint(name, type, parent, child, pose(el), xyz, lower, upper);
+            Double effort = limit != null && limit.hasAttribute("effort") ? number(limit, "effort") : null;
+            if (effort != null && effort <= 0) throw new IllegalArgumentException("Non-positive effort on joint " + name);
+            Joint joint = new Joint(name, type, parent, child, pose(el), xyz, lower, upper, effort);
             if (joints.putIfAbsent(name, joint) != null) throw new IllegalArgumentException("Duplicate joint " + name);
         }
         List<String> roots = links.keySet().stream().filter(k -> !children.contains(k)).toList();

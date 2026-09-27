@@ -3,6 +3,7 @@ package simrunner;
 import com.jme3.asset.AssetManager;
 import com.jme3.bullet.BulletAppState;
 import com.jme3.bullet.PhysicsSpace;
+import com.jme3.bullet.PhysicsTickListener;
 import com.jme3.bullet.collision.shapes.BoxCollisionShape;
 import com.jme3.bullet.collision.shapes.CollisionShape;
 import com.jme3.bullet.collision.shapes.CompoundCollisionShape;
@@ -24,9 +25,8 @@ import java.util.List;
 /**
  * Phase 4's rigid-body physics world (Libbulletjme via Minie, per R2). Field walls and game
  * pieces are real Bullet rigid bodies; the chassis is a dynamic rigid body driven by a
- * force/torque computed from the kinematics/motor model (per R2/R6's Mecanum constraint) --
- * NOT by wheel-ground contact, which no plain rigid-body engine can produce for a Mecanum
- * drivetrain's 45-degree roller behavior.
+ * bounded traction impulses computed from the kinematics/motor model. External pushes,
+ * gravity, and collision impulses remain under Bullet control.
  */
 public class PhysicsWorld {
 
@@ -38,20 +38,26 @@ public class PhysicsWorld {
 
     private final AssetManager assetManager;
     private final Node rootNode;
-    private final BulletAppState bulletAppState;
     private final PhysicsSpace physicsSpace;
 
     private RigidBodyControl chassisControl;
     private RigidBodyControl gamePieceControl;
     private Node gamePieceNode;
-    private Node chassisVisualNode;
     private boolean pieceHeld = false;
+    private physics.MecanumKinematics.ChassisVelocity driveTarget =
+        new physics.MecanumKinematics.ChassisVelocity(0, 0, 0);
+    private float driveMassKg;
+    private float driveYawInertia;
+
 
     public PhysicsWorld(AssetManager assetManager, Node rootNode, BulletAppState bulletAppState) {
+        this(assetManager, rootNode, bulletAppState.getPhysicsSpace());
+    }
+
+    PhysicsWorld(AssetManager assetManager, Node rootNode, PhysicsSpace space) {
         this.assetManager = assetManager;
         this.rootNode = rootNode;
-        this.bulletAppState = bulletAppState;
-        this.physicsSpace = bulletAppState.getPhysicsSpace();
+        this.physicsSpace = space;
     }
 
     public void buildFieldBoundary() {
@@ -135,52 +141,56 @@ public class PhysicsWorld {
     }
 
     public void buildChassis(Node visualNode, double massKg, Vector3f startPosition, CollisionShape shape) {
-        this.chassisVisualNode = visualNode;
         chassisControl = new RigidBodyControl(shape, (float) massKg);
-        chassisControl.setPhysicsLocation(startPosition);
-        // No linear/angular damping: chassis velocity is now directly commanded each tick
-        // (see driveChassis), so damping would just fight that command rather than model
-        // anything real.
+        driveMassKg = (float) massKg;
+        driveYawInertia = 1f / chassisControl.getInverseInertiaLocal(null).y;
+        chassisControl.setAngularFactor(new Vector3f(0, 1, 0)); // level mecanum constraint
+        chassisControl.setFriction(0); // planar rolling resistance is modeled by the drive controller
+        chassisControl.setEnableSleep(false);
         visualNode.addControl(chassisControl);
+        // Attaching a RigidBodyControl copies the spatial transform into Bullet; place it afterwards.
+        chassisControl.setPhysicsLocation(startPosition);
         physicsSpace.add(chassisControl);
+        physicsSpace.addTickListener(new PhysicsTickListener() {
+            @Override public void prePhysicsTick(PhysicsSpace space, float dt) { applyDriveImpulse(dt); }
+            @Override public void physicsTick(PhysicsSpace space, float dt) { }
+        });
     }
 
-    /**
-     * Drives the chassis by directly setting its linear/angular velocity from the kinematics
-     * model's desired chassis-frame velocity, per R2/R6's Mecanum constraint (the kinematics
-     * model, not wheel-ground contact, is authoritative for drivetrain motion). Bullet's
-     * contact solver still resolves collisions normally on top of this each step (a directly
-     * driven dynamic body is a standard, well-established technique for "kinematic-ish but
-     * collidable" vehicles in physics-engine-backed sims).
-     *
-     * DEVIATION (documented): an earlier version of this method applied a bounded
-     * force/torque instead, matching the plan's original "force and torque" framing more
-     * literally. That approach was tried first and found to fight the chassis's own damping
-     * (undershooting the kinematics target speed substantially) and, before the bound was
-     * added, produced a genuine numerical explosion that cascaded into breaking the game
-     * piece's V-HACD collision in the same shared physics space -- caught by actually running
-     * the full scene and watching both the chassis and an unrelated body diverge to absurd
-     * coordinates, not assumed safe from the isolated smoke tests alone. Direct velocity
-     * control is simpler, has no gain to mis-tune, and cannot itself inject the same kind of
-     * force-magnitude instability.
-     */
+    /** Sets the target; finite traction impulses are applied on fixed physics ticks. */
     public void driveChassis(physics.MecanumKinematics.ChassisVelocity desiredRobotFrameVelocity, float dtSeconds) {
-        if (dtSeconds <= 0) return;
-        com.jme3.math.Quaternion rot = chassisControl.getPhysicsRotation();
-        Vector3f desiredWorld = rot.mult(new Vector3f(
-            (float) desiredRobotFrameVelocity.vx, 0, (float) -desiredRobotFrameVelocity.vy));
-        chassisControl.setLinearVelocity(desiredWorld);
-        chassisControl.setAngularVelocity(new Vector3f(0, (float) desiredRobotFrameVelocity.omega, 0));
+        driveTarget = desiredRobotFrameVelocity;
     }
+
+    private void applyDriveImpulse(float dt) {
+        if (dt <= 0 || !chassisControl.isDynamic()) return;
+        Vector3f desired = chassisControl.getPhysicsRotation().mult(new Vector3f(
+            (float) driveTarget.vx, 0, (float) -driveTarget.vy));
+        Vector3f actual = chassisControl.getLinearVelocity();
+        desired.y = 0;
+        Vector3f error = new Vector3f(desired.x - actual.x, 0, desired.z - actual.z);
+        // Exact first-order response avoids explicit-Euler gain explosions at large timesteps.
+        float response = (float) -Math.expm1(-dt / 0.10);
+        Vector3f delta = error.mult(response);
+        float maxDelta = 7.8f * dt; // mu ~= 0.8 traction cap; tune against robot logs
+        if (delta.length() > maxDelta) delta.normalizeLocal().multLocal(maxDelta);
+        chassisControl.applyCentralImpulse(delta.mult(driveMassKg));
+        float yawDelta = ((float) driveTarget.omega - chassisControl.getAngularVelocity().y) * response;
+        yawDelta = Math.max(-20f * dt, Math.min(20f * dt, yawDelta));
+        chassisControl.applyTorqueImpulse(new Vector3f(0, yawDelta * driveYawInertia, 0));
+    }
+
+    void setDriveAssemblyProperties(float massKg, float yawInertia) {
+        driveMassKg = massKg;
+        driveYawInertia = yawInertia;
+    }
+
+    RigidBodyControl chassisBody() { return chassisControl; }
+    PhysicsSpace space() { return physicsSpace; }
 
     public Vector3f getChassisPosition() { return chassisControl.getPhysicsLocation(); }
     public com.jme3.math.Quaternion getChassisRotation() { return chassisControl.getPhysicsRotation(); }
     public Vector3f getChassisAngularVelocity() { return chassisControl.getAngularVelocity(); }
-
-    public void setChassisInertia(Vector3f momentsKgM2) {
-        chassisControl.setInverseInertiaLocal(new Vector3f(
-            1f / momentsKgM2.x, 1f / momentsKgM2.y, 1f / momentsKgM2.z));
-    }
 
     /**
      * Proximity-trigger intake (per Phase 4's spec: an acceptable simplified model, not full

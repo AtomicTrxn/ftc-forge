@@ -68,6 +68,7 @@ public class SimulatorApp extends SimpleApplication {
     private BulletAppState bulletAppState;
     private PhysicsWorld physicsWorld;
     private ImportedRobotScene importedScene;
+    private ArticulatedRobot articulated;
     private Executor.Session opModeSession;
     private String[] motorNames;
     private double simTimeMs;
@@ -224,11 +225,8 @@ public class SimulatorApp extends SimpleApplication {
             if (simConfig.totalMassKg != null) urdf = urdf.withTotalMassKg(simConfig.totalMassKg);
             urdf.validateHardwareMap(hardwareMap);
             importedScene = new ImportedRobotScene(urdf, urdfPath, hardwareMap, assetManager, simConfig.vhacdMaxHulls);
-            robotNode = importedScene.root;
-            rootNode.attachChild(robotNode);
-            physicsWorld.buildChassis(robotNode, urdf.totalMassKg(), new Vector3f(0, 0.1f, 0),
-                importedScene.chassisShape());
-            physicsWorld.setChassisInertia(importedScene.inertiaDiagonal());
+            articulated = new ArticulatedRobot(importedScene, physicsWorld, rootNode, new Vector3f(0, 0.1f, 0));
+            robotNode = articulated.chassisNode;
             System.out.println("[IMPORT] Physics chassis from " + urdf.name + ", mass=" + urdf.totalMassKg() + "kg");
             double[] wheelX = new double[4], wheelY = new double[4];
             boolean[] wheelFound = new boolean[4];
@@ -296,7 +294,6 @@ public class SimulatorApp extends SimpleApplication {
         }
         if (importedScene != null) {
             importedScene.update();
-            physicsWorld.setChassisInertia(importedScene.inertiaDiagonal());
         }
 
         MecanumKinematics.ChassisVelocity v = kinematics.forwardFromWheelSpeeds(
@@ -327,6 +324,7 @@ public class SimulatorApp extends SimpleApplication {
         if (opModeSession != null && !opModeSession.isAlive()) {
             System.out.println("[SIM] OpMode finished. Final chassis position: " + physicsWorld.getChassisPosition()
                 + " gamePieceHeld=" + physicsWorld.isPieceHeld());
+            if (articulated != null) System.out.println("[SIM] Final physical joints: " + articulated.jointPositions());
             opModeSession = null; // avoid repeated stop() calls across frames
             stop();
         }

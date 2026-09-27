@@ -25,9 +25,13 @@ Put paths in `sim.config`. See [`sample-teamcode/sim-urdf.config.example`](sampl
 
 Each movable URDF joint gets a `<transmission>` whose actuator names match names in the FTC XML. A transmission may have two actuators for a two-motor slide. `mechanicalReduction` is motor output-shaft radians per joint radian, or radians per joint meter for a prismatic joint. The importer rejects an actuator absent from the paired `HardwareMap` at load time. Motor specs remain in the preset JSON and do not move into URDF.
 
-The parser handles `fixed`, `continuous`, `revolute`, and `prismatic` joints; box, sphere, cylinder, and STL collision geometry; and binary or ASCII STL meshes. URDF units are meters, kilograms, and radians, with x forward, y left, z up. Relative STL paths and `package://` paths are resolved beside the URDF. The renderer converts those coordinates into its x forward, y up, z right scene. Drive wheel joints animate from encoder readings; chassis movement still comes from the Mecanum kinematics model rather than wheel-ground traction. Imported wheel radius and direct chassis-child wheel positions set the Mecanum dimensions when all four are found.
+The parser handles `fixed`, `continuous`, `revolute`, and `prismatic` joints; box, sphere, cylinder, and STL collision geometry; and binary or ASCII STL meshes. URDF units are meters, kilograms, and radians, with x forward, y left, z up. Relative STL paths and `package://` paths are resolved beside the URDF. The renderer converts those coordinates into its x forward, y up, z right scene. Drive wheel joints animate from encoder readings; chassis movement uses bounded traction impulses derived from Mecanum wheel speed, preserving environmental contact and external pushes rather than overwriting body velocity. Wheels and their descendants remain visual and contribute mass as chassis ballast; they do not simulate individual rollers. Imported wheel radius and direct chassis-child wheel positions set the Mecanum dimensions when all four are found.
 
-The chassis rigid body uses the imported fixed-link collision subtree, total link mass, and an aggregate inertia estimate that updates as moving links change position. Movable mechanism geometry is rendered and encoder tracked, but does not yet collide as separate articulated rigid bodies. For STL chassis collision, the importer runs V-HACD to create convex hulls and rejects an empty decomposition. Very dense meshes may need simplification before import.
+Fixed-link subtrees are welded into rigid bodies at their aggregate centers of mass. Each movable mechanism has a dynamic body connected by a limited hinge or slider constraint. Nested mechanisms collide with the floor, walls, and game pieces. Motor torque is transformed through `mechanicalReduction`, with equal reaction on the parent, and actual joint motion feeds the shaft encoders. A blocked mechanism can therefore stall while its powered motor draws current. Encoder reset changes the sensor reference without moving the body.
+
+Mass is counted once per link. Body inertia uses the rotated CAD tensor and parallel-axis terms, reduced to a diagonal approximation. Each dynamic subtree needs positive mass and inertia. Revolute limits must be within `[-pi, pi]`; continuous joints may rotate freely. Optional positive URDF `limit effort` values cap motor effort. Servo effort defaults to a bounded generic controller. Electrical damping is integrated implicitly, and numerical impulse caps keep high-reduction mechanisms stable. The chassis remains level and collisions within the same robot are excluded to accommodate overlapping CAD geometry. These approximations need calibration with real team data.
+
+For STL collision on every body, the importer runs V-HACD to create convex hulls and rejects an empty decomposition. Very dense meshes may need simplification before import.
 
 To run the sample with the included Gradle wrapper:
 
@@ -36,6 +40,7 @@ cp -R gui-runner/sample-teamcode /tmp/ftc-import-example
 cp /tmp/ftc-import-example/sim-urdf.config.example /tmp/ftc-import-example/sim.config
 ./gradlew :gui-runner:run --args='/tmp/ftc-import-example BasicMecanumOpMode'
 ./gradlew :gui-runner:runSimulatorApp --args='/tmp/ftc-import-example BasicMecanumOpMode'
+./gradlew :gui-runner:runSimulatorApp --args='/tmp/ftc-import-example MechanismPhysicsOpMode'
 ```
 
 ## CAD export reality check
