@@ -9,6 +9,9 @@ public class TelemetryLogRow {
     public int loopIter;
     public double loopTimeMs;
     public double batteryVoltageV;
+    public Double vxMps;
+    public Double vyMps;
+    public Double omegaRadS;
     public final Map<String, MotorSample> motors = new LinkedHashMap<>();
 
     public static class MotorSample {

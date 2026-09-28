@@ -48,6 +48,8 @@ public class PhysicsWorld {
         new physics.MecanumKinematics.ChassisVelocity(0, 0, 0);
     private float driveMassKg;
     private float driveYawInertia;
+    private double driveResponseTimeS = .10, driveMaxAccelMps2 = 7.8;
+    private double yawResponseTimeS = .10, driveMaxYawAccelRadps2 = 20;
 
 
     public PhysicsWorld(AssetManager assetManager, Node rootNode, BulletAppState bulletAppState) {
@@ -162,6 +164,16 @@ public class PhysicsWorld {
         driveTarget = desiredRobotFrameVelocity;
     }
 
+    public void configureDrive(double responseTimeS, double maxAccelMps2,
+                               double yawResponseTimeS, double maxYawAccelRadps2) {
+        for (double value : new double[]{responseTimeS, maxAccelMps2, yawResponseTimeS, maxYawAccelRadps2})
+            if (!Double.isFinite(value) || value <= 0) throw new IllegalArgumentException("Drive calibration must be finite and positive");
+        this.driveResponseTimeS = responseTimeS;
+        this.driveMaxAccelMps2 = maxAccelMps2;
+        this.yawResponseTimeS = yawResponseTimeS;
+        this.driveMaxYawAccelRadps2 = maxYawAccelRadps2;
+    }
+
     private void applyDriveImpulse(float dt) {
         if (dt <= 0 || !chassisControl.isDynamic()) return;
         Vector3f desired = chassisControl.getPhysicsRotation().mult(new Vector3f(
@@ -170,13 +182,15 @@ public class PhysicsWorld {
         desired.y = 0;
         Vector3f error = new Vector3f(desired.x - actual.x, 0, desired.z - actual.z);
         // Exact first-order response avoids explicit-Euler gain explosions at large timesteps.
-        float response = (float) -Math.expm1(-dt / 0.10);
+        float response = (float) -Math.expm1(-dt / driveResponseTimeS);
         Vector3f delta = error.mult(response);
-        float maxDelta = 7.8f * dt; // mu ~= 0.8 traction cap; tune against robot logs
+        float maxDelta = (float) driveMaxAccelMps2 * dt;
         if (delta.length() > maxDelta) delta.normalizeLocal().multLocal(maxDelta);
         chassisControl.applyCentralImpulse(delta.mult(driveMassKg));
-        float yawDelta = ((float) driveTarget.omega - chassisControl.getAngularVelocity().y) * response;
-        yawDelta = Math.max(-20f * dt, Math.min(20f * dt, yawDelta));
+        float yawResponse = (float) -Math.expm1(-dt / yawResponseTimeS);
+        float yawDelta = ((float) driveTarget.omega - chassisControl.getAngularVelocity().y) * yawResponse;
+        float yawCap = (float) driveMaxYawAccelRadps2 * dt;
+        yawDelta = Math.max(-yawCap, Math.min(yawCap, yawDelta));
         chassisControl.applyTorqueImpulse(new Vector3f(0, yawDelta * driveYawInertia, 0));
     }
 

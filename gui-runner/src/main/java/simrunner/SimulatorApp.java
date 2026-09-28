@@ -214,6 +214,12 @@ public class SimulatorApp extends SimpleApplication {
         RobotConfigXml xml = RobotConfigXml.parse(projectDir.resolve(simConfig.robotConfig).toFile());
         PresetRobotConfig preset = PresetRobotConfig.load(projectDir.resolve(simConfig.presetMotors));
         hardwareMap = HardwareMapBuilder.build(xml, preset);
+        if (simConfig.calibration != null) {
+            CalibrationProfile profile = CalibrationProfile.load(projectDir.resolve(simConfig.calibration));
+            profile.applyHardware(hardwareMap);
+            profile.applyDrive(physicsWorld);
+            System.out.println("[CALIBRATION] Loaded " + simConfig.calibration);
+        }
         for (IMU imu : hardwareMap.getAll(IMU.class)) {
             ((SimIMU) imu).setLatencyMs(simConfig.imuLatencyMs);
         }
@@ -225,7 +231,7 @@ public class SimulatorApp extends SimpleApplication {
             if (simConfig.totalMassKg != null) urdf = urdf.withTotalMassKg(simConfig.totalMassKg);
             urdf.validateHardwareMap(hardwareMap);
             importedScene = new ImportedRobotScene(urdf, urdfPath, hardwareMap, assetManager, simConfig.vhacdMaxHulls);
-            articulated = new ArticulatedRobot(importedScene, physicsWorld, rootNode, new Vector3f(0, 0.1f, 0));
+            articulated = new ArticulatedRobot(importedScene, physicsWorld, rootNode, new Vector3f(0, 0.1f, 0), simConfig.servoPhysics);
             robotNode = articulated.chassisNode;
             System.out.println("[IMPORT] Physics chassis from " + urdf.name + ", mass=" + urdf.totalMassKg() + "kg");
             double[] wheelX = new double[4], wheelY = new double[4];

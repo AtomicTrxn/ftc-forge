@@ -1,6 +1,8 @@
 package simrunner;
 
 import simcore.MiniJson;
+import physics.ServoModel;
+import java.util.LinkedHashMap;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -19,10 +21,12 @@ public class SimConfig {
     public String robotConfig;
     public String presetMotors;
     public String urdf;
+    public String calibration;
     public Double totalMassKg;
     public int vhacdMaxHulls = 8;
     public long imuLatencyMs = 8;
     public final List<String> extraClasspath = new ArrayList<>();
+    public final Map<String, ServoModel.Spec> servoPhysics = new LinkedHashMap<>();
 
     @SuppressWarnings("unchecked")
     public static SimConfig load(Path projectRoot) throws IOException {
@@ -33,6 +37,7 @@ public class SimConfig {
         if (root.containsKey("robotConfig")) config.robotConfig = (String) root.get("robotConfig");
         if (root.containsKey("presetMotors")) config.presetMotors = (String) root.get("presetMotors");
         if (root.containsKey("urdf")) config.urdf = (String) root.get("urdf");
+        if (root.containsKey("calibration")) config.calibration = (String) root.get("calibration");
         if (root.containsKey("total_mass_kg")) config.totalMassKg = ((Number) root.get("total_mass_kg")).doubleValue();
         if (root.containsKey("vhacd_max_hulls")) config.vhacdMaxHulls = ((Number) root.get("vhacd_max_hulls")).intValue();
         if (root.containsKey("imu_latency_ms")) config.imuLatencyMs = ((Number) root.get("imu_latency_ms")).longValue();
@@ -45,6 +50,22 @@ public class SimConfig {
                 config.extraClasspath.add((String) o);
             }
         }
+        if (root.containsKey("servoPhysics")) {
+            Map<String, Object> entries = (Map<String, Object>) root.get("servoPhysics");
+            for (var entry : entries.entrySet()) {
+                Map<String, Object> values = (Map<String, Object>) entry.getValue();
+                config.servoPhysics.put(entry.getKey(), new ServoModel.Spec(
+                    requiredNumber(values, "stall_torque_nm"), requiredNumber(values, "no_load_speed_rad_s"),
+                    requiredNumber(values, "travel_rad"), requiredNumber(values, "position_gain_per_s"),
+                    requiredNumber(values, "velocity_gain_nm_per_rad_s"), requiredNumber(values, "deadband_rad")));
+            }
+        }
         return config;
+    }
+    private static double requiredNumber(Map<String, Object> values, String key) {
+        Object value = values.get(key);
+        if (!(value instanceof Number number))
+            throw new IllegalArgumentException("servoPhysics requires numeric " + key);
+        return number.doubleValue();
     }
 }

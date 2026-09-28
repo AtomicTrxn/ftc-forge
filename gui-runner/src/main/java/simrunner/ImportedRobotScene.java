@@ -94,8 +94,8 @@ final class ImportedRobotScene {
         }
     }
 
-    record Part(String name, Node visual, Transform origin, Vector3f com, double mass,
-                Vector3f inertia, CollisionShape shape) { }
+    record Part(String name, Node visual, Transform origin, Vector3f com,
+                Quaternion principalRotation, double mass, Vector3f inertia, CollisionShape shape) { }
     final Map<String, String> owners = new LinkedHashMap<>();
     final java.util.Set<String> wheelLinks = new java.util.HashSet<>();
 
@@ -141,37 +141,37 @@ final class ImportedRobotScene {
             }
             if (mass <= 0) throw new IllegalArgumentException("Dynamic URDF subtree has no positive mass: " + name);
             Vector3f com = weightedCom.divide((float) mass);
-            double[] diagonal = new double[3];
-            CompoundCollisionShape compound = new CompoundCollisionShape();
+            PrincipalInertia aggregate = new PrincipalInertia();
             for (RobotUrdf.Link link : urdf.links.values()) {
                 if (!owners.get(link.name()).equals(name)) continue;
                 Node node = linkNodes.get(link.name());
                 Quaternion relative = inverse.mult(node.getWorldRotation());
                 Quaternion inertialRotation = relative.mult(rotation(link.inertialOrigin().rpy()));
-                var r = inertialRotation.toRotationMatrix();
                 double[][] tensor = {{link.inertia().ixx(), link.inertia().ixz(), -link.inertia().ixy()},
                     {link.inertia().ixz(), link.inertia().izz(), -link.inertia().iyz()},
                     {-link.inertia().ixy(), -link.inertia().iyz(), link.inertia().iyy()}};
-                for (int a = 0; a < 3; a++) for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++)
-                    diagonal[a] += r.get(a, i) * tensor[i][j] * r.get(a, j);
-                Vector3f offset = centers.get(link.name()).subtract(com);
-                diagonal[0] += link.massKg() * (offset.y * offset.y + offset.z * offset.z);
-                diagonal[1] += link.massKg() * (offset.x * offset.x + offset.z * offset.z);
-                diagonal[2] += link.massKg() * (offset.x * offset.x + offset.y * offset.y);
-                if (wheelLinks.contains(link.name())) continue;
+                aggregate.addRotated(tensor, inertialRotation);
+                aggregate.addParallelAxis(link.massKg(), centers.get(link.name()).subtract(com));
+            }
+            PrincipalInertia.Principal principal = aggregate.diagonalize(name);
+            Quaternion principalInverse = principal.rotation().inverse();
+            CompoundCollisionShape compound = new CompoundCollisionShape();
+            for (RobotUrdf.Link link : urdf.links.values()) {
+                if (!owners.get(link.name()).equals(name) || wheelLinks.contains(link.name())) continue;
+                Node node = linkNodes.get(link.name());
+                Quaternion relative = inverse.mult(node.getWorldRotation());
                 for (RobotUrdf.Collision collision : link.collisions()) {
-                    Vector3f translation = inverse.mult(node.localToWorld(position(collision.origin().xyz()), null)
+                    Vector3f offset = inverse.mult(node.localToWorld(position(collision.origin().xyz()), null)
                         .subtract(origin.getTranslation())).subtract(com);
-                    Quaternion orientation = relative.mult(rotation(collision.origin().rpy()))
-                        .mult(shapeAxisRotation(collision.geometry()));
+                    Vector3f translation = principalInverse.mult(offset);
+                    Quaternion orientation = principalInverse.mult(relative.mult(rotation(collision.origin().rpy()))
+                        .mult(shapeAxisRotation(collision.geometry())));
                     compound.addChildShape(physicsShape(collision.geometry()), translation, orientation.toRotationMatrix());
                 }
             }
-            for (double moment : diagonal) if (!Double.isFinite(moment) || moment <= 0)
-                throw new IllegalArgumentException("Dynamic URDF subtree has invalid inertia: " + name);
             CollisionShape shape = compound.countChildren() == 0 ? new EmptyShape(false) : compound;
-            result.add(new Part(name, originNode, origin, com, mass,
-                new Vector3f((float) diagonal[0], (float) diagonal[1], (float) diagonal[2]), shape));
+            result.add(new Part(name, originNode, origin, com, principal.rotation(), mass,
+                principal.moments(), shape));
         }
         return result;
     }

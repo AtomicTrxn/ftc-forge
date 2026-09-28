@@ -15,7 +15,12 @@ public class HardwareMapBuilder {
     private static long lastTickNanos = 0;
     private static long simTimeMs = 0;
 
-    public static HardwareMap build(RobotConfigXml xml, PresetRobotConfig preset) {
+    public static synchronized HardwareMap build(RobotConfigXml xml, PresetRobotConfig preset) {
+        // A new run starts from defaults; an optional calibration profile is applied afterward.
+        BATTERY.vInternal = 12.6;
+        BATTERY.rBattery = 0.15;
+        lastTickNanos = 0;
+        simTimeMs = 0;
         HardwareMap map = new HardwareMap();
         for (RobotConfigXml.DeviceEntry entry : xml.devices) {
             RobotConfigXml.DeviceType type = RobotConfigXml.resolveType(entry.tag);

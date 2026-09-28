@@ -59,6 +59,10 @@ public class Main {
         System.out.println("[EXECUTOR] Robot config: " + preset.name + " (" + xml.devices.size() + " devices)");
 
         HardwareMap hardwareMap = HardwareMapBuilder.build(xml, preset);
+        if (simConfig.calibration != null) {
+            CalibrationProfile.load(projectDir.resolve(simConfig.calibration)).applyHardware(hardwareMap);
+            System.out.println("[CALIBRATION] Loaded " + simConfig.calibration);
+        }
         if (simConfig.urdf != null) {
             RobotUrdf urdf = RobotUrdf.parse(projectDir.resolve(simConfig.urdf));
             if (simConfig.totalMassKg != null) urdf = urdf.withTotalMassKg(simConfig.totalMassKg);

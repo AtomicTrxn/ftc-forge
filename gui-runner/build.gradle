@@ -56,3 +56,11 @@ tasks.register('runVhacdSmokeTest', JavaExec) {
     mainClass = 'simrunner.VhacdSmokeTestApp'
     jvmArgs = ['-XstartOnFirstThread']
 }
+
+tasks.register('calibrate', JavaExec) {
+    group = 'application'
+    description = 'Fits an opt-in simulator profile from recorded FTC telemetry.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'simrunner.CalibrationCli'
+    workingDir = rootProject.projectDir
+}

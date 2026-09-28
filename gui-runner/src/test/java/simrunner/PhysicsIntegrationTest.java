@@ -16,6 +16,9 @@ import physics.MecanumKinematics;
 import physics.MotorSpec;
 import simcore.RobotUrdf;
 import simcore.SimDcMotorEx;
+import simcore.SimServo;
+import physics.ServoModel;
+import java.util.Map;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,6 +29,26 @@ class PhysicsIntegrationTest {
     @TempDir Path temp;
     @BeforeAll static void nativePhysics() { NativeLibraryLoader.loadNativeLibrary("bulletjme", true); }
     private static final float DT = 1f / 60;
+
+    @Test void principalFrameProducesCrossAxisAngularResponse() {
+        PrincipalInertia inertia = new PrincipalInertia();
+        inertia.addRotated(new double[][] {{2, .6, 0}, {.6, 3, 0}, {0, 0, 4}}, new com.jme3.math.Quaternion());
+        var principal = inertia.diagonalize("coupled");
+        PhysicsSpace space = new PhysicsSpace(PhysicsSpace.BroadphaseType.DBVT);
+        try {
+            space.setGravity(Vector3f.ZERO);
+            PhysicsRigidBody body = new PhysicsRigidBody(new BoxCollisionShape(new Vector3f(.1f, .1f, .1f)), 1);
+            body.setPhysicsRotation(principal.rotation());
+            body.setInverseInertiaLocal(new Vector3f(1 / principal.moments().x,
+                1 / principal.moments().y, 1 / principal.moments().z));
+            space.add(body);
+            body.applyTorqueImpulse(Vector3f.UNIT_X);
+            space.update(DT, 0);
+            // For [[2,.6],[.6,3]], inverse-inertia response to unit X is [3,-.6]/5.64.
+            assertEquals(3 / 5.64, body.getAngularVelocity().x, .02);
+            assertEquals(-.6 / 5.64, body.getAngularVelocity().y, .02);
+        } finally { space.destroy(); }
+    }
 
     @Test void pushPersistsAndDriveIntoWallStaysFinite() {
         PhysicsSpace space = new PhysicsSpace(PhysicsSpace.BroadphaseType.DBVT);
@@ -116,6 +139,63 @@ class PhysicsIntegrationTest {
             assertEquals(stopped, robot.jointPosition("slide"), .01);
             assertEquals(0, motor.getCurrentPosition(), 5);
             assertEquals(1, space.getRigidBodyList().stream().filter(PhysicsRigidBody::isDynamic).mapToDouble(PhysicsRigidBody::getMass).sum(), .01);
+        } finally { space.destroy(); }
+    }
+
+    @Test void nonAdjacentTipCollidesWithOwnChassis() throws Exception {
+        Path file = temp.resolve("self-contact.urdf");
+        Files.writeString(file, "<robot name='self-contact'>" + link("base", "0 0 0", ".4 .2 .2", 5)
+            + link("arm", "0 0 0", ".05 .05 .05", 1)
+            + link("tip", "0 0 0", ".1 .1 .1", .5)
+            + "<joint name='anchor' type='prismatic'><parent link='base'/><child link='arm'/><origin xyz='.45 0 0'/><axis xyz='1 0 0'/><limit lower='0' upper='0'/></joint>"
+            + "<joint name='retract' type='prismatic'><parent link='arm'/><child link='tip'/><origin xyz='.15 0 0'/><axis xyz='-1 0 0'/><limit lower='0' upper='.5'/></joint>"
+            + "<transmission name='tip-tx'><joint name='retract'/><actuator name='tip_motor'/></transmission></robot>");
+        PhysicsSpace space = new PhysicsSpace(PhysicsSpace.BroadphaseType.DBVT);
+        try {
+            space.setGravity(Vector3f.ZERO);
+            HardwareMap map = new HardwareMap();
+            SimDcMotorEx motor = new SimDcMotorEx("tip_motor", new MotorSpec("test", 1, 3, 9, 30, 12, 500));
+            map.register("tip_motor", motor);
+            ImportedRobotScene scene = new ImportedRobotScene(RobotUrdf.parse(file), file, map, new DesktopAssetManager(true), 8);
+            PhysicsWorld world = new PhysicsWorld(null, new Node(), space);
+            ArticulatedRobot robot = new ArticulatedRobot(scene, world, new Node(), Vector3f.ZERO);
+            world.chassisBody().setMass(0);
+            assertEquals(1, world.chassisBody().countIgnored()); // adjacent arm only
+            motor.setPower(.6);
+            for (int i = 0; i < 600; i++) space.update(DT, 0);
+            double position = robot.jointPosition("retract");
+            assertTrue(position > .15 && position < .42, "Nonadjacent tip must stop against the base: " + position);
+            assertEquals(2, space.countJoints());
+        } finally { space.destroy(); }
+    }
+
+    @Test void specifiedServoStallsUnderContactAndReversesDirection() throws Exception {
+        Path file = temp.resolve("servo.urdf");
+        Files.writeString(file, "<robot name='servo'>" + link("base", "0 0 0", ".1 .1 .1", 5)
+            + link("carriage", ".1 0 0", ".1 .1 .1", 1)
+            + "<joint name='slide' type='prismatic'><parent link='base'/><child link='carriage'/><origin xyz='.2 0 0'/><axis xyz='1 0 0'/><limit lower='0' upper='.5' effort='3'/></joint>"
+            + "<transmission name='tx'><joint name='slide'/><actuator name='servo'><mechanicalReduction>10</mechanicalReduction></actuator></transmission></robot>");
+        PhysicsSpace space = new PhysicsSpace(PhysicsSpace.BroadphaseType.DBVT);
+        try {
+            space.setGravity(Vector3f.ZERO);
+            HardwareMap map = new HardwareMap();
+            SimServo servo = new SimServo("servo"); map.register("servo", servo);
+            ImportedRobotScene scene = new ImportedRobotScene(RobotUrdf.parse(file), file, map, new DesktopAssetManager(true), 8);
+            PhysicsWorld world = new PhysicsWorld(null, new Node(), space);
+            assertThrows(IllegalArgumentException.class,
+                () -> new ArticulatedRobot(scene, world, new Node(), Vector3f.ZERO));
+            ServoModel.Spec spec = new ServoModel.Spec(.4, 4, Math.PI, 8, .5, .01);
+            ArticulatedRobot robot = new ArticulatedRobot(scene, world, new Node(), Vector3f.ZERO, Map.of("servo", spec));
+            world.chassisBody().setMass(0);
+            PhysicsRigidBody obstacle = new PhysicsRigidBody(new BoxCollisionShape(new Vector3f(.05f, 1, 1)), 0);
+            obstacle.setPhysicsLocation(new Vector3f(.65f, 0, 0));
+            space.add(obstacle);
+            servo.setPosition(1);
+            for (int i = 0; i < 600; i++) space.update(DT, 0);
+            assertTrue(robot.jointPosition("slide") > .05 && robot.jointPosition("slide") < .35);
+            servo.setDirection(com.qualcomm.robotcore.hardware.Servo.Direction.REVERSE);
+            for (int i = 0; i < 600; i++) space.update(DT, 0);
+            assertEquals(0, robot.jointPosition("slide"), .02);
         } finally { space.destroy(); }
     }
 
