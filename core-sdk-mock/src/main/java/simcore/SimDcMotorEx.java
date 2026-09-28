@@ -76,6 +76,14 @@ public class SimDcMotorEx implements DcMotorEx {
         }
     }
 
+    public synchronized void configureFriction(double staticTorqueNm, double viscousBNmS) {
+        if (!Double.isFinite(staticTorqueNm) || staticTorqueNm < 0
+            || !Double.isFinite(viscousBNmS) || viscousBNmS < 0)
+            throw new IllegalArgumentException("Motor friction must be finite and nonnegative");
+        motorModel.tauStaticNm = staticTorqueNm;
+        motorModel.viscousBNms = viscousBNmS;
+    }
+
     public synchronized double signedCommandedPower() {
         return commandedPower() * (direction == Direction.FORWARD ? 1 : -1);
     }

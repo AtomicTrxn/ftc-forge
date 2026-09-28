@@ -13,6 +13,7 @@ import com.jme3.scene.Node;
 import com.qualcomm.robotcore.hardware.Servo;
 import simcore.RobotUrdf;
 import simcore.SimDcMotorEx;
+import physics.ServoModel;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -23,12 +24,27 @@ import java.util.Map;
 final class ArticulatedRobot implements PhysicsTickListener {
     private record Body(ImportedRobotScene.Part part, RigidBodyControl control, Node node) { }
     private final ImportedRobotScene scene;
+    private final Map<String, ServoModel.Spec> servoSpecs;
     private final Map<String, Body> bodies = new LinkedHashMap<>();
     private final List<Axis> axes = new ArrayList<>();
     final Node chassisNode;
 
     ArticulatedRobot(ImportedRobotScene scene, PhysicsWorld world, Node field, Vector3f start) throws Exception {
+        this(scene, world, field, start, Map.of());
+    }
+
+    ArticulatedRobot(ImportedRobotScene scene, PhysicsWorld world, Node field, Vector3f start,
+                     Map<String, ServoModel.Spec> servoSpecs) throws Exception {
         this.scene = scene;
+        this.servoSpecs = servoSpecs;
+        for (RobotUrdf.Transmission tx : scene.urdf.transmissions.values()) {
+            if (scene.isDriveWheel(scene.urdf.joints.get(tx.joint()))) continue;
+            for (RobotUrdf.Actuator actuator : tx.actuators()) {
+                if (scene.hardwareMap.tryGet(Servo.class, actuator.name()) != null
+                    && !servoSpecs.containsKey(actuator.name()))
+                    throw new IllegalArgumentException("Missing servoPhysics entry for URDF actuator " + actuator.name());
+            }
+        }
         List<ImportedRobotScene.Part> parts = scene.parts();
         // Snapshot joint origins before detaching/reparenting the visual tree.
         Map<String, Vector3f> jointPivots = new LinkedHashMap<>();
@@ -41,8 +57,9 @@ final class ArticulatedRobot implements PhysicsTickListener {
         for (ImportedRobotScene.Part part : parts) {
             Node bodyNode = new Node("body-" + part.name());
             part.visual().removeFromParent();
-            part.visual().setLocalTranslation(part.com().negate());
-            part.visual().setLocalRotation(new Quaternion());
+            Quaternion principalInverse = part.principalRotation().inverse();
+            part.visual().setLocalTranslation(principalInverse.mult(part.com().negate()));
+            part.visual().setLocalRotation(principalInverse);
             bodyNode.attachChild(part.visual());
             field.attachChild(bodyNode);
             Vector3f center = part.origin().getTranslation().add(start)
@@ -57,12 +74,10 @@ final class ArticulatedRobot implements PhysicsTickListener {
                 body.setPhysicsLocation(center);
                 world.space().add(body);
             }
-            body.setPhysicsRotation(part.origin().getRotation());
+            body.setPhysicsRotation(part.origin().getRotation().mult(part.principalRotation()));
             body.setInverseInertiaLocal(new Vector3f(1f / part.inertia().x,
                 1f / part.inertia().y, 1f / part.inertia().z));
             body.setEnableSleep(false);
-            // Avoid double contacts in overlapping CAD assemblies; environment contact remains active.
-            for (Body other : bodies.values()) body.addToIgnoreList(other.control());
             bodies.put(part.name(), new Body(part, body, bodyNode));
         }
         chassisNode = bodies.get(scene.urdf.rootLink).node();
@@ -81,6 +96,9 @@ final class ArticulatedRobot implements PhysicsTickListener {
             if (joint.type().equals("fixed") || scene.wheelLinks.contains(joint.child())) continue;
             Body parent = bodies.get(scene.owners.get(joint.parent()));
             Body child = bodies.get(scene.owners.get(joint.child()));
+            // Adjacent bodies share a joint and often have deliberately overlapping CAD geometry.
+            // Nonadjacent links and siblings keep full collision response.
+            parent.control().addToIgnoreList(child.control());
             Axis axis = new Axis(joint, parent, child, jointPivots.get(joint.name()), jointRotations.get(joint.name()), world.space());
             for (RobotUrdf.Transmission tx : scene.urdf.transmissions.values()) {
                 if (!tx.joint().equals(joint.name())) continue;
@@ -90,6 +108,8 @@ final class ArticulatedRobot implements PhysicsTickListener {
                     if (motor != null) {
                         if (!usedMotors.add(actuator.name())) throw new IllegalArgumentException("Motor drives multiple physical joints: " + actuator.name());
                         motor.useExternalShaft();
+                    } else if (!servoSpecs.containsKey(actuator.name())) {
+                        throw new IllegalArgumentException("Missing servoPhysics entry for URDF actuator " + actuator.name());
                     }
                 }
             }
@@ -194,10 +214,15 @@ final class ArticulatedRobot implements PhysicsTickListener {
                     damping += motor.externalTorqueDamping() * reduction * reduction;
                 } else {
                     Servo servo = scene.hardwareMap.get(Servo.class, actuator.name());
+                    ServoModel.Spec spec = servoSpecs.get(actuator.name());
+                    if (spec == null) throw new IllegalArgumentException(
+                        "Missing servoPhysics entry for URDF actuator " + actuator.name());
+                    double position = servo.getDirection() == Servo.Direction.REVERSE
+                        ? 1 - servo.getPosition() : servo.getPosition();
                     double low = joint.lower() == null ? 0 : joint.lower();
-                    double high = joint.upper() == null ? 2 * Math.PI : joint.upper();
-                    double target = low + servo.getPosition() * (high - low) / reduction;
-                    effort += Math.max(-2, Math.min(2, (target - q) * 10 - velocity));
+                    double target = low + position * spec.travelRad() / reduction;
+                    if (joint.lower() != null) target = Math.max(joint.lower(), Math.min(joint.upper(), target));
+                    effort += ServoModel.effort(spec, (target - q) * reduction, velocity * reduction) * reduction;
                 }
             }
             // Bound net motor impulse by effective joint inertia/mass to keep stiff gear reductions stable.

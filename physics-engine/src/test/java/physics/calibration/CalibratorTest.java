@@ -47,7 +47,7 @@ class CalibratorTest {
             "V_internal recovered from the synthetic log should match ground truth");
 
         Calibrator.FrictionFit frictionFit = Calibrator.fitMotorFriction(
-            rows, "test_motor", spec, ROTATIONAL_INERTIA, batteryFit.vInternal, batteryFit.rBattery);
+            rows, "test_motor", spec, ROTATIONAL_INERTIA);
         assertEquals(GROUND_TRUTH_TAU_STATIC, frictionFit.tauStaticNm, 0.03,
             "tauStatic recovered from the synthetic log should match ground truth");
         assertEquals(GROUND_TRUTH_VISCOUS_B, frictionFit.viscousBNms, 0.002,

@@ -29,7 +29,24 @@ The parser handles `fixed`, `continuous`, `revolute`, and `prismatic` joints; bo
 
 Fixed-link subtrees are welded into rigid bodies at their aggregate centers of mass. Each movable mechanism has a dynamic body connected by a limited hinge or slider constraint. Nested mechanisms collide with the floor, walls, and game pieces. Motor torque is transformed through `mechanicalReduction`, with equal reaction on the parent, and actual joint motion feeds the shaft encoders. A blocked mechanism can therefore stall while its powered motor draws current. Encoder reset changes the sensor reference without moving the body.
 
-Mass is counted once per link. Body inertia uses the rotated CAD tensor and parallel-axis terms, reduced to a diagonal approximation. Each dynamic subtree needs positive mass and inertia. Revolute limits must be within `[-pi, pi]`; continuous joints may rotate freely. Optional positive URDF `limit effort` values cap motor effort. Servo effort defaults to a bounded generic controller. Electrical damping is integrated implicitly, and numerical impulse caps keep high-reduction mechanisms stable. The chassis remains level and collisions within the same robot are excluded to accommodate overlapping CAD geometry. These approximations need calibration with real team data.
+Mass is counted once per link. Body inertia uses every CAD tensor term and the full parallel-axis contribution, then rotates the rigid body into its principal-inertia frame for Bullet. Each dynamic subtree needs positive mass and a positive-definite inertia tensor. Revolute limits must be within `[-pi, pi]`; continuous joints may rotate freely. Optional positive URDF `limit effort` values cap actuator effort. Electrical damping is integrated implicitly, and numerical impulse caps keep high-reduction mechanisms stable. Nonadjacent robot bodies collide; directly joined bodies are exempt because their CAD geometry may overlap at the joint. The chassis remains level.
+
+For each servo actuator in a movable URDF transmission, add measured or manufacturer-based shaft parameters to `servoPhysics` in `sim.config`:
+
+```json
+"servoPhysics": {
+  "claw_servo": {
+    "stall_torque_nm": 1.0,
+    "no_load_speed_rad_s": 5.0,
+    "travel_rad": 3.14,
+    "position_gain_per_s": 10.0,
+    "velocity_gain_nm_per_rad_s": 0.5,
+    "deadband_rad": 0.01
+  }
+}
+```
+
+These values describe the servo output shaft, before any URDF `mechanicalReduction`. `travel_rad` is the shaft travel from command 0 to 1; `position_gain_per_s` and `velocity_gain_nm_per_rad_s` set the finite position and velocity response. Adjust them against observed motion. The importer rejects a driven servo without a matching entry. Servo direction and the URDF joint effort limit are respected. See [calibration](CALIBRATION.md) for the battery, motor, and drivetrain profile.
 
 For STL collision on every body, the importer runs V-HACD to create convex hulls and rejects an empty decomposition. Very dense meshes may need simplification before import.
 
