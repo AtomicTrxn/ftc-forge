@@ -56,3 +56,8 @@ R6 CAD & Robot Config Pipeline (needs R3) ────────────�
 - **Decisions required** — open questions carried over from the plan, each with a recommended default. An agent may deviate from the default but must record its reasoning in the RESULTS file.
 - **Output contract** — the required section headings for the RESULTS.md file.
 - **Definition of done** — a checklist to confirm before considering the task complete.
+
+## REV DUO powered CAD follow-up
+
+- [Plan](rev-duo-physics/PLAN.md)
+- [Implementation and validation results](rev-duo-physics/RESULTS.md)

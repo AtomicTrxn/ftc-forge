@@ -46,6 +46,8 @@ public class PhysicsWorld {
     private boolean pieceHeld = false;
     private physics.MecanumKinematics.ChassisVelocity driveTarget =
         new physics.MecanumKinematics.ChassisVelocity(0, 0, 0);
+    private com.jme3.math.Quaternion bodyToRobot = new com.jme3.math.Quaternion();
+    private Vector3f robotOriginInBody = new Vector3f();
     private float driveMassKg;
     private float driveYawInertia;
     private double driveResponseTimeS = .10, driveMaxAccelMps2 = 7.8;
@@ -65,6 +67,8 @@ public class PhysicsWorld {
     public void buildFieldBoundary() {
         addStaticBox("floor", new Vector3f(FIELD_HALF_SIZE_M, 0.01f, FIELD_HALF_SIZE_M),
             new Vector3f(0, -0.01f, 0), ColorRGBA.DarkGray);
+        // The rendered tile plane already supplies the floor; coincident faces cause z-fighting.
+        rootNode.getChild("floor").setCullHint(com.jme3.scene.Spatial.CullHint.Always);
 
         addStaticBox("wall-north", new Vector3f(FIELD_HALF_SIZE_M, WALL_HEIGHT_M, WALL_THICKNESS_M),
             new Vector3f(0, WALL_HEIGHT_M, FIELD_HALF_SIZE_M), ColorRGBA.LightGray);
@@ -131,7 +135,9 @@ public class PhysicsWorld {
 
         CompoundCollisionShape compound = new CompoundCollisionShape();
         for (Vhacd4Hull hull : hulls) {
-            compound.addChildShape(new HullCollisionShape(hull));
+            HullCollisionShape shape = new HullCollisionShape(hull);
+            shape.setMargin(.002f); // 2 mm contact skin; Bullet's default 4 cm overwhelms FTC mechanisms.
+            compound.addChildShape(shape);
         }
         System.out.println("[PHYSICS] V-HACD decomposed game piece into " + hulls.size() + " convex hull(s).");
         return compound;
@@ -176,7 +182,7 @@ public class PhysicsWorld {
 
     private void applyDriveImpulse(float dt) {
         if (dt <= 0 || !chassisControl.isDynamic()) return;
-        Vector3f desired = chassisControl.getPhysicsRotation().mult(new Vector3f(
+        Vector3f desired = getChassisRotation().mult(new Vector3f(
             (float) driveTarget.vx, 0, (float) -driveTarget.vy));
         Vector3f actual = chassisControl.getLinearVelocity();
         desired.y = 0;
@@ -203,7 +209,29 @@ public class PhysicsWorld {
     PhysicsSpace space() { return physicsSpace; }
 
     public Vector3f getChassisPosition() { return chassisControl.getPhysicsLocation(); }
-    public com.jme3.math.Quaternion getChassisRotation() { return chassisControl.getPhysicsRotation(); }
+    void setRobotFrame(com.jme3.math.Quaternion bodyToRobot, Vector3f robotOriginInBody) {
+        this.bodyToRobot = bodyToRobot.clone();
+        this.robotOriginInBody = robotOriginInBody.clone();
+    }
+    /** Joint impulses bypass Bullet angular factors; explicitly lock pitch/roll for articulated chassis. */
+    void constrainChassisLevel() {
+        chassisControl.setAngularFactor(1);
+        var level = new com.jme3.bullet.joints.New6Dof(chassisControl, Vector3f.ZERO,
+            getChassisPosition(), bodyToRobot.toRotationMatrix(), new com.jme3.math.Matrix3f(),
+            com.jme3.bullet.RotationOrder.YZX);
+        for (int dof = 0; dof < 6; dof++) {
+            boolean free = dof < 3 || dof == 4;
+            level.set(com.jme3.bullet.joints.motors.MotorParam.LowerLimit, dof, free ? 1 : 0);
+            level.set(com.jme3.bullet.joints.motors.MotorParam.UpperLimit, dof, free ? -1 : 0);
+        }
+        physicsSpace.add(level);
+    }
+
+    public Vector3f robotPointWorld(Vector3f robotPoint) {
+        return getChassisPosition().add(chassisControl.getPhysicsRotation().mult(robotOriginInBody))
+            .add(getChassisRotation().mult(robotPoint));
+    }
+    public com.jme3.math.Quaternion getChassisRotation() { return chassisControl.getPhysicsRotation().mult(bodyToRobot); }
     public Vector3f getChassisAngularVelocity() { return chassisControl.getAngularVelocity(); }
 
     /**
@@ -225,6 +253,7 @@ public class PhysicsWorld {
                 System.out.println("[PHYSICS] Game piece captured at distance " + distance + "m (< " + captureRadiusM + "m).");
             }
         } else if (!intakeActive && pieceHeld) {
+            gamePieceControl.setPhysicsLocation(gamePieceNode.getLocalTranslation());
             physicsSpace.add(gamePieceControl);
             gamePieceControl.setLinearVelocity(Vector3f.ZERO);
             pieceHeld = false;
@@ -232,6 +261,7 @@ public class PhysicsWorld {
         }
 
         if (pieceHeld) {
+            gamePieceControl.setPhysicsLocation(intakePointWorld);
             gamePieceNode.setLocalTranslation(intakePointWorld);
         }
     }

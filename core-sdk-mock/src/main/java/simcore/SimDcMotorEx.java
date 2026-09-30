@@ -55,8 +55,9 @@ public class SimDcMotorEx implements DcMotorEx {
 
     /** Pure function of current state -- safe to call twice per tick (see HardwareMapBuilder). */
     public synchronized double commandedPower() {
-        double logicalOmega = externallyDriven && direction == Direction.REVERSE ? -omegaRadS : omegaRadS;
+        double logicalOmega = direction == Direction.REVERSE ? -omegaRadS : omegaRadS;
         switch (mode) {
+            case STOP_AND_RESET_ENCODER: return 0;
             case RUN_USING_ENCODER: {
                 double targetOmega = targetVelocityFraction * spec.omegaNoLoadRadS;
                 double kP = pidf.get(RunMode.RUN_USING_ENCODER).p;
@@ -102,8 +103,10 @@ public class SimDcMotorEx implements DcMotorEx {
             (signedPower == 0 && zeroPowerBehavior == ZeroPowerBehavior.FLOAT)) ? 0 : motorModel.current(spec, omegaRadS, vActual);
         motorModel.tickThermal(spec, lastCurrentAmps, dtSeconds);
 
-        double revolutions = (omegaRadS * dtSeconds) / (2 * Math.PI);
-        if (!externallyDriven) currentPositionTicks += revolutions * spec.encoderCountsPerRev;
+        if (!externallyDriven) {
+            externalShaftRadians += omegaRadS * dtSeconds;
+            currentPositionTicks = shaftTicks() - encoderZeroTicks;
+        }
 
         tickBuffer.push(simTimeMs, (int) Math.round(currentPositionTicks));
         Integer delayed = tickBuffer.read(simTimeMs, encoderLatencyMs);
@@ -142,7 +145,15 @@ public class SimDcMotorEx implements DcMotorEx {
 
     private static double clamp(double v) { return Math.max(-1.0, Math.min(1.0, v)); }
 
-    @Override public synchronized void setDirection(Direction d) { this.direction = d; }
+    @Override public synchronized void setDirection(Direction d) {
+        if (direction != d) {
+            encoderZeroTicks = -encoderZeroTicks;
+            currentPositionTicks = -currentPositionTicks;
+            lastKnownTicks = -lastKnownTicks;
+            tickBuffer = new SensorRingBuffer<>(200);
+        }
+        this.direction = d;
+    }
     @Override public synchronized Direction getDirection() { return direction; }
     @Override public synchronized void setPower(double p) {
         this.power = clamp(p);
@@ -152,7 +163,7 @@ public class SimDcMotorEx implements DcMotorEx {
     @Override public synchronized void setMode(RunMode m) {
         this.mode = m;
         if (m == RunMode.STOP_AND_RESET_ENCODER) {
-            if (externallyDriven) encoderZeroTicks = shaftTicks();
+            encoderZeroTicks = shaftTicks();
             currentPositionTicks = 0;
             if (!externallyDriven) omegaRadS = 0;
             lastKnownTicks = 0;
@@ -173,7 +184,7 @@ public class SimDcMotorEx implements DcMotorEx {
         this.targetVelocityFraction = angularRate / spec.omegaNoLoadRadS;
     }
     @Override public synchronized double getVelocity() { return (omegaRadS / (2 * Math.PI)) * spec.encoderCountsPerRev
-        * (externallyDriven && direction == Direction.REVERSE ? -1 : 1); }
+        * (direction == Direction.REVERSE ? -1 : 1); }
     @Override public synchronized void setPIDFCoefficients(RunMode m, PIDFCoefficients p) { pidf.put(m, p); }
     @Override public synchronized PIDFCoefficients getPIDFCoefficients(RunMode m) { return pidf.get(m); }
     @Override public synchronized double getCurrent(CurrentUnit unit) { return unit.fromAmps(Math.abs(lastCurrentAmps)); }
@@ -184,6 +195,7 @@ public class SimDcMotorEx implements DcMotorEx {
     @Override public synchronized void close() { }
 
     public synchronized MotorSpec getSpec() { return spec; }
+    public synchronized double getPhysicalShaftRadians() { return externalShaftRadians; }
     public synchronized double getOmegaRadS() { return omegaRadS; }
     public synchronized double getRawTicks() { return currentPositionTicks; }
 }

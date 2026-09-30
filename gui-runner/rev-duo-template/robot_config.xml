@@ -1,0 +1,10 @@
+<Robot type="FirstInspires-FTC">
+  <LynxUsbDevice name="Control Hub" serialNumber="(embedded)">
+    <LynxModule name="Control Hub" port="173">
+      <RevRobotics20HdHexMotor name="rightDrive" port="0"/>
+      <RevRobotics20HdHexMotor name="leftDrive" port="1"/>
+      <RevRoboticsCoreHexMotor name="intake" port="2"/>
+      <RevIMU name="imu" port="0" bus="0"/>
+    </LynxModule>
+  </LynxUsbDevice>
+</Robot>

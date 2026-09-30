@@ -9,7 +9,7 @@ dependencies {
 
     def jme3 = [v: '3.7.0-stable', g: 'org.jmonkeyengine']
     implementation "${jme3.g}:jme3-core:${jme3.v}"
-    runtimeOnly "${jme3.g}:jme3-desktop:${jme3.v}"
+    implementation "${jme3.g}:jme3-desktop:${jme3.v}"
     runtimeOnly "${jme3.g}:jme3-lwjgl3:${jme3.v}"
 
     // Phase 4: Libbulletjme-backed rigid-body physics via Minie (per R2's engine decision).
@@ -38,7 +38,7 @@ tasks.register('runSimulatorApp', JavaExec) {
     mainClass = 'simrunner.SimulatorApp'
     workingDir = rootProject.projectDir
     // GLFW/AWT on macOS require windowing calls on the process's first thread.
-    jvmArgs = ['-XstartOnFirstThread']
+    jvmArgs = ['-XstartOnFirstThread', '-Djava.awt.headless=true']
 }
 
 tasks.register('runPhysicsSmokeTest', JavaExec) {
@@ -73,5 +73,15 @@ tasks.register('previewRobot', JavaExec) {
     workingDir = rootProject.projectDir
     // PNG encoding must not initialize AWT's Cocoa event loop beside GLFW on macOS.
     jvmArgs = ['-XstartOnFirstThread', '-Djava.awt.headless=true']
+    maxHeapSize = '2g'
+}
+
+tasks.register('verifyRobotPhysics', JavaExec) {
+    group = 'verification'
+    description = 'Runs a fixed-timestep differential CAD physics probe.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'simrunner.RobotPhysicsProbe'
+    workingDir = rootProject.projectDir
+    jvmArgs = ['-Djava.awt.headless=true']
     maxHeapSize = '2g'
 }

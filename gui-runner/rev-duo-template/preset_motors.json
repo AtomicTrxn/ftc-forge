@@ -1,0 +1,32 @@
+{
+  "name": "REV DUO starter template (manufacturer baseline; verify cartridges and hub names)",
+  "motors": {
+    "leftDrive": {
+      "sku": "REV-HD-Hex-UltraPlanetary-4x5",
+      "ratio": 18.93040293040293,
+      "tauStallNm": 1.9876923076923076,
+      "iStallAmps": 8.5,
+      "omegaNoLoadRadS": 33.19097501664139,
+      "vNominal": 12,
+      "encoderCountsPerRev": 530.0512820512821
+    },
+    "rightDrive": {
+      "sku": "REV-HD-Hex-UltraPlanetary-4x5",
+      "ratio": 18.93040293040293,
+      "tauStallNm": 1.9876923076923076,
+      "iStallAmps": 8.5,
+      "omegaNoLoadRadS": 33.19097501664139,
+      "vNominal": 12,
+      "encoderCountsPerRev": 530.0512820512821
+    },
+    "intake": {
+      "sku": "REV-41-1300",
+      "ratio": 72,
+      "tauStallNm": 3.2,
+      "iStallAmps": 4.4,
+      "omegaNoLoadRadS": 13.08996938995747,
+      "vNominal": 12,
+      "encoderCountsPerRev": 288
+    }
+  }
+}

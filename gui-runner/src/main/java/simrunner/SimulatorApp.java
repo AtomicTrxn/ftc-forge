@@ -37,9 +37,9 @@ import java.util.List;
 
 /**
  * Phase 2/4: jME renderer (per R2 -- jMonkeyEngine, not a separate toolkit). Runs a real
- * OpMode via Phase 1's Executor, feeds its motor state through MecanumKinematics each frame,
+ * OpMode via Phase 1's Executor, feeds its motor state through the configured drive kinematics each frame,
  * and (per Phase 4) drives a real Libbulletjme/Minie rigid-body chassis with the resulting
- * target velocity -- Bullet resolves wall/game-piece contact, not wheel-ground traction (R2/R6's
+ * target velocity -- Bullet resolves wall/game-piece contact with aggregate wheel traction (R2/R6's
  * Mecanum constraint). Camera is now a 3D perspective view (was Phase 2's orthographic
  * top-down), extending the same scene rather than replacing it.
  *
@@ -62,6 +62,8 @@ public class SimulatorApp extends SimpleApplication {
     private final Gamepad gamepad1 = new Gamepad();
     private final Gamepad gamepad2 = new Gamepad();
     private MecanumKinematics kinematics;
+    private DifferentialDriveConfig differential;
+    private MotorIntakeConfig motorIntake;
     private Node robotNode;
     private Geometry[] wheelGeoms;
     private double[] wheelVisualAngleRad;
@@ -72,6 +74,9 @@ public class SimulatorApp extends SimpleApplication {
     private Executor.Session opModeSession;
     private String[] motorNames;
     private double simTimeMs;
+    private Path screenshotPath;
+    private com.jme3.app.state.ScreenshotAppState screenshot;
+    private int finishingFrames;
     private final double[] wheelRadii = {WHEEL_RADIUS_M, WHEEL_RADIUS_M, WHEEL_RADIUS_M, WHEEL_RADIUS_M};
 
     public SimulatorApp(Path projectDir, String opModeName) {
@@ -81,10 +86,12 @@ public class SimulatorApp extends SimpleApplication {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
-            System.err.println("Usage: SimulatorApp <projectDir> <opModeName>");
+            System.err.println("Usage: SimulatorApp <projectDir> <opModeName> [screenshot.png]");
             System.exit(2);
         }
         SimulatorApp app = new SimulatorApp(Path.of(args[0]), args[1]);
+        if (args.length > 2) app.screenshotPath = Path.of(args[2]).toAbsolutePath();
+        app.setPauseOnLostFocus(false);
         app.setShowSettings(false);
         app.start();
     }
@@ -103,6 +110,14 @@ public class SimulatorApp extends SimpleApplication {
         bindGamepadControls();
         try {
             loadRobotAndStartOpMode();
+            if (screenshotPath != null) {
+                java.nio.file.Files.createDirectories(screenshotPath.getParent());
+                String name = screenshotPath.getFileName().toString();
+                if (!name.endsWith(".png")) throw new IllegalArgumentException("Screenshot must end in .png");
+                screenshot = new com.jme3.app.state.ScreenshotAppState(screenshotPath.getParent() + "/", name.substring(0, name.length() - 4));
+                screenshot.setIsNumbered(false);
+                stateManager.attach(screenshot);
+            }
         } catch (Exception e) {
             throw new RuntimeException("Failed to load team project at " + projectDir, e);
         }
@@ -127,7 +142,7 @@ public class SimulatorApp extends SimpleApplication {
                 tile.setMaterial(mat);
                 tile.setLocalRotation(new Quaternion().fromAngleAxis(-FastMath.HALF_PI, Vector3f.UNIT_X));
                 float x = -FIELD_SIZE_M / 2f + col * TILE_SIZE_M;
-                float z = -FIELD_SIZE_M / 2f + row * TILE_SIZE_M;
+                float z = -FIELD_SIZE_M / 2f + (row + 1) * TILE_SIZE_M;
                 tile.setLocalTranslation(x, 0, z);
                 field.attachChild(tile);
             }
@@ -194,15 +209,25 @@ public class SimulatorApp extends SimpleApplication {
 
         inputManager.addMapping("ManualForward", new KeyTrigger(KeyInput.KEY_UP));
         inputManager.addMapping("ManualBack", new KeyTrigger(KeyInput.KEY_DOWN));
+        inputManager.addMapping("ManualLeft", new KeyTrigger(KeyInput.KEY_LEFT));
+        inputManager.addMapping("ManualRight", new KeyTrigger(KeyInput.KEY_RIGHT));
+        inputManager.addMapping("ManualIntake", new KeyTrigger(KeyInput.KEY_SPACE));
+        inputManager.addMapping("ManualEject", new KeyTrigger(KeyInput.KEY_E));
         ActionListener listener = (name, isPressed, tpf) -> {
             if (name.equals("ManualForward")) gamepad1.left_stick_y = isPressed ? -1f : 0f;
             if (name.equals("ManualBack")) gamepad1.left_stick_y = isPressed ? 1f : 0f;
+            if (name.equals("ManualLeft")) gamepad1.right_stick_x = isPressed ? -1f : 0f;
+            if (name.equals("ManualRight")) gamepad1.right_stick_x = isPressed ? 1f : 0f;
+            if (name.equals("ManualIntake")) gamepad1.a = isPressed;
+            if (name.equals("ManualEject")) gamepad1.b = isPressed;
         };
-        inputManager.addListener(listener, "ManualForward", "ManualBack");
+        inputManager.addListener(listener, "ManualForward", "ManualBack", "ManualLeft", "ManualRight", "ManualIntake", "ManualEject");
     }
 
     private void loadRobotAndStartOpMode() throws Exception {
         SimConfig simConfig = SimConfig.load(projectDir);
+        differential = simConfig.drive;
+        motorIntake = simConfig.intake;
         Path sourceRoot = projectDir.resolve(simConfig.sourceRoot);
         Path classesDir = TeamCodeCompiler.compile(projectDir, sourceRoot, simConfig.extraClasspath);
 
@@ -225,6 +250,10 @@ public class SimulatorApp extends SimpleApplication {
         for (IMU imu : hardwareMap.getAll(IMU.class)) {
             ((SimIMU) imu).setLatencyMs(simConfig.imuLatencyMs);
         }
+        motorNames = differential == null ? new String[]{"left_front_drive", "right_front_drive", "left_back_drive", "right_back_drive"}
+            : differential.motorNames().toArray(String[]::new);
+        for (String name : motorNames) hardwareMap.get(simcore.SimDcMotorEx.class, name);
+        if (motorIntake != null) hardwareMap.get(simcore.SimDcMotorEx.class, motorIntake.motor());
         double trackWidthM = 0.30, wheelBaseM = 0.35;
 
         if (simConfig.urdf != null) {
@@ -232,46 +261,59 @@ public class SimulatorApp extends SimpleApplication {
             RobotUrdf urdf = RobotUrdf.parse(urdfPath);
             if (simConfig.totalMassKg != null) urdf = urdf.withTotalMassKg(simConfig.totalMassKg);
             urdf.validateHardwareMap(hardwareMap);
-            importedScene = new ImportedRobotScene(urdf, urdfPath, hardwareMap, assetManager, simConfig.vhacdMaxHulls);
-            articulated = new ArticulatedRobot(importedScene, physicsWorld, rootNode, new Vector3f(0, 0.1f, 0), simConfig.servoPhysics);
+            importedScene = new ImportedRobotScene(urdf, urdfPath, hardwareMap, assetManager, simConfig.vhacdMaxHulls, java.util.Set.of(motorNames));
+            articulated = new ArticulatedRobot(importedScene, physicsWorld, rootNode, new Vector3f(0, (float) simConfig.startHeightM, 0), simConfig.servoPhysics);
             robotNode = articulated.chassisNode;
             System.out.println("[IMPORT] Physics chassis from " + urdf.name + ", mass=" + urdf.totalMassKg() + "kg");
-            double[] wheelX = new double[4], wheelY = new double[4];
-            boolean[] wheelFound = new boolean[4];
-            String[] drives = {"left_front_drive", "right_front_drive", "left_back_drive", "right_back_drive"};
-            for (RobotUrdf.Transmission tx : urdf.transmissions.values()) {
-                RobotUrdf.Joint joint = urdf.joints.get(tx.joint());
-                if (!joint.type().equals("continuous")) continue;
-                for (RobotUrdf.Actuator actuator : tx.actuators()) {
-                    for (int i = 0; i < 4; i++) {
-                        if (!actuator.name().equals(drives[i])) continue;
-                        if (joint.parent().equals(urdf.rootLink)) {
-                            wheelX[i] = joint.origin().xyz()[0];
-                            wheelY[i] = joint.origin().xyz()[1];
-                            wheelFound[i] = true;
-                        }
-                        for (RobotUrdf.Collision c : urdf.links.get(joint.child()).collisions()) {
-                            if (c.geometry().kind().equals("cylinder")) wheelRadii[i] = c.geometry().dimensions()[0];
+            if (differential == null) {
+                double[] wheelX = new double[4], wheelY = new double[4];
+                boolean[] wheelFound = new boolean[4];
+                String[] drives = {"left_front_drive", "right_front_drive", "left_back_drive", "right_back_drive"};
+                for (RobotUrdf.Transmission tx : urdf.transmissions.values()) {
+                    RobotUrdf.Joint joint = urdf.joints.get(tx.joint());
+                    if (!joint.type().equals("continuous")) continue;
+                    for (RobotUrdf.Actuator actuator : tx.actuators()) {
+                        for (int i = 0; i < 4; i++) {
+                            if (!actuator.name().equals(drives[i])) continue;
+                            if (joint.parent().equals(urdf.rootLink)) {
+                                wheelX[i] = joint.origin().xyz()[0];
+                                wheelY[i] = joint.origin().xyz()[1];
+                                wheelFound[i] = true;
+                            }
+                            for (RobotUrdf.Collision c : urdf.links.get(joint.child()).collisions()) {
+                                if (c.geometry().kind().equals("cylinder")) wheelRadii[i] = c.geometry().dimensions()[0];
+                            }
                         }
                     }
                 }
-            }
-            if (wheelFound[0] && wheelFound[1] && wheelFound[2] && wheelFound[3]) {
-                trackWidthM = (Math.abs(wheelY[0] - wheelY[1]) + Math.abs(wheelY[2] - wheelY[3])) / 2;
-                wheelBaseM = (Math.abs(wheelX[0] - wheelX[2]) + Math.abs(wheelX[1] - wheelX[3])) / 2;
-                if (trackWidthM <= 0 || wheelBaseM <= 0)
-                    throw new IllegalArgumentException("Imported drive-wheel layout has zero track width or wheelbase");
-                System.out.println("[IMPORT] Mecanum track=" + trackWidthM + "m wheelbase=" + wheelBaseM + "m");
-            } else {
-                System.out.println("[WARN] Could not derive all four drive-wheel positions from chassis-child joints; using preset kinematics dimensions.");
+                if (wheelFound[0] && wheelFound[1] && wheelFound[2] && wheelFound[3]) {
+                    trackWidthM = (Math.abs(wheelY[0] - wheelY[1]) + Math.abs(wheelY[2] - wheelY[3])) / 2;
+                    wheelBaseM = (Math.abs(wheelX[0] - wheelX[2]) + Math.abs(wheelX[1] - wheelX[3])) / 2;
+                    if (trackWidthM <= 0 || wheelBaseM <= 0)
+                        throw new IllegalArgumentException("Imported drive-wheel layout has zero track width or wheelbase");
+                    System.out.println("[IMPORT] Mecanum track=" + trackWidthM + "m wheelbase=" + wheelBaseM + "m");
+                } else {
+                    System.out.println("[WARN] Could not derive all four drive-wheel positions from chassis-child joints; using preset kinematics dimensions.");
+                }
             }
         } else {
             buildRobot();
             physicsWorld.buildChassis(robotNode, CHASSIS_MASS_KG, new Vector3f(0, 0.1f, 0));
         }
+        if (differential != null && importedScene != null) {
+            cam.setFrustumPerspective(45, (float) cam.getWidth() / cam.getHeight(), .01f, 30f);
+            var orbit = new com.jme3.input.ChaseCamera(cam, robotNode, inputManager);
+            orbit.setDefaultDistance(1.2f);
+            orbit.setMinDistance(.35f);
+            orbit.setMaxDistance(6);
+            orbit.setDefaultHorizontalRotation(.75f);
+            orbit.setDefaultVerticalRotation(.55f);
+            orbit.setTrailingEnabled(false);
+            orbit.setDragToRotate(true);
+            setDisplayStatView(false);
+        }
         physicsWorld.buildGamePiece(new Vector3f(0.8f, 0.05f, 0));
 
-        motorNames = new String[]{"left_front_drive", "right_front_drive", "left_back_drive", "right_back_drive"};
         kinematics = new MecanumKinematics(trackWidthM, wheelBaseM, 2.0);
 
         Telemetry telemetry = new ConsoleTelemetry();
@@ -281,33 +323,43 @@ public class SimulatorApp extends SimpleApplication {
 
     @Override
     public void simpleUpdate(float tpf) {
+        if (finishingFrames > 0) {
+            if (--finishingFrames == 0) stop();
+            return;
+        }
         if (hardwareMap == null) return;
 
         // Real motor angular velocities (R4's torque/speed model), converted to logical
         // (commanded-sign) wheel speed -- see wheelLinearSpeed's own javadoc for why the
         // Direction correction matters. Also spins each wheel's visual mesh independently.
-        DcMotorEx[] driveMotors = {
-            hardwareMap.get(DcMotorEx.class, motorNames[0]), hardwareMap.get(DcMotorEx.class, motorNames[1]),
-            hardwareMap.get(DcMotorEx.class, motorNames[2]), hardwareMap.get(DcMotorEx.class, motorNames[3])
-        };
         double[] wheelSpeeds = new double[4];
-        for (int i = 0; i < 4; i++) {
-            wheelSpeeds[i] = wheelLinearSpeed(driveMotors[i], wheelRadii[i]);
-            if (importedScene == null) {
+        if (differential == null) {
+            for (int i = 0; i < 4; i++) {
+                wheelSpeeds[i] = wheelLinearSpeed(hardwareMap.get(DcMotorEx.class, motorNames[i]), wheelRadii[i]);
+            }
+        } else if (importedScene == null) {
+            wheelSpeeds[0] = wheelSpeeds[2] = hardwareMap.get(simcore.SimDcMotorEx.class, differential.leftMotor()).getOmegaRadS()
+                * differential.leftShaftSign() * differential.wheelRadiusM();
+            wheelSpeeds[1] = wheelSpeeds[3] = hardwareMap.get(simcore.SimDcMotorEx.class, differential.rightMotor()).getOmegaRadS()
+                * differential.rightShaftSign() * differential.wheelRadiusM();
+        }
+        if (importedScene == null) {
+            for (int i = 0; i < 4; i++) {
                 wheelVisualAngleRad[i] += (wheelSpeeds[i] / WHEEL_VISUAL_RADIUS_M) * tpf;
-                wheelGeoms[i].setLocalRotation(
-                    new Quaternion().fromAngleAxis(FastMath.HALF_PI, Vector3f.UNIT_X)
-                        .mult(new Quaternion().fromAngleAxis((float) wheelVisualAngleRad[i], Vector3f.UNIT_Z)));
+                wheelGeoms[i].setLocalRotation(new Quaternion().fromAngleAxis(FastMath.HALF_PI, Vector3f.UNIT_X)
+                    .mult(new Quaternion().fromAngleAxis((float) wheelVisualAngleRad[i], Vector3f.UNIT_Z)));
             }
         }
+
         if (importedScene != null) {
             importedScene.update();
         }
 
-        MecanumKinematics.ChassisVelocity v = kinematics.forwardFromWheelSpeeds(
-            wheelSpeeds[0], wheelSpeeds[1], wheelSpeeds[2], wheelSpeeds[3]);
+        MecanumKinematics.ChassisVelocity v;
+        if (differential != null) v = differential.velocity(hardwareMap);
+        else v = kinematics.forwardFromWheelSpeeds(wheelSpeeds[0], wheelSpeeds[1], wheelSpeeds[2], wheelSpeeds[3]);
 
-        // Phase 4: drive the real rigid-body chassis with target velocity from the Mecanum
+        // Drive the real rigid-body chassis with target velocity from the configured drive
         // constraint instead of directly integrating a kinematic pose -- Bullet's
         // RigidBodyControl on robotNode syncs its transform from physics automatically, so
         // there's no manual setLocalTranslation/setLocalRotation here anymore.
@@ -321,20 +373,31 @@ public class SimulatorApp extends SimpleApplication {
             ((SimIMU) imu).update(yawRad, yawRateRadS, Math.round(simTimeMs));
         }
 
-        // Intake: "claw" servo position > 0.5 means active, per this phase's sample OpMode.
+        // Legacy servo intake defaults; an explicit motor intake uses physical shaft speed.
         Servo claw = hardwareMap.tryGet(Servo.class, "claw");
         boolean intakeActive = claw != null && claw.getPosition() > 0.5;
         Vector3f chassisPos = physicsWorld.getChassisPosition();
         Vector3f forward = physicsWorld.getChassisRotation().mult(new Vector3f(1, 0, 0));
         Vector3f intakePoint = chassisPos.add(forward.mult(0.35f));
-        physicsWorld.updateIntake(intakeActive, intakePoint, 0.15f);
+        if (motorIntake != null) {
+            intakeActive = motorIntake.active(hardwareMap);
+            intakePoint = physicsWorld.robotPointWorld(motorIntake.point());
+        }
+        physicsWorld.updateIntake(intakeActive, intakePoint, motorIntake == null ? .15f : motorIntake.captureRadiusM());
 
         if (opModeSession != null && !opModeSession.isAlive()) {
+            if (opModeSession.result.failure != null)
+                throw new RuntimeException("OpMode failed", opModeSession.result.failure);
             System.out.println("[SIM] OpMode finished. Final chassis position: " + physicsWorld.getChassisPosition()
-                + " gamePieceHeld=" + physicsWorld.isPieceHeld());
+                + " yaw=" + yawRad + " gamePieceHeld=" + physicsWorld.isPieceHeld()
+                + " piece=" + physicsWorld.getGamePiecePosition() + " intake=" + intakePoint);
             if (articulated != null) System.out.println("[SIM] Final physical joints: " + articulated.jointPositions());
             opModeSession = null; // avoid repeated stop() calls across frames
-            stop();
+            if (screenshot == null) stop();
+            else {
+                screenshot.takeScreenshot();
+                finishingFrames = 10;
+            }
         }
     }
 
