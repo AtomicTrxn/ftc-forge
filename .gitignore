@@ -2,3 +2,6 @@ build/
 *.class
 .gradle/
 .local/
+
+# Python CAD preparation tools
+__pycache__/

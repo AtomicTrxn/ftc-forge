@@ -178,7 +178,7 @@ class PhysicsIntegrationTest {
             for (int i = 0; i < 600; i++) space.update(DT, 0);
             double position = robot.jointPosition("retract");
             assertTrue(position > .15 && position < .42, "Nonadjacent tip must stop against the base: " + position);
-            assertEquals(2, space.countJoints());
+            assertEquals(3, space.countJoints());
         } finally { space.destroy(); }
     }
 
@@ -237,7 +237,7 @@ class PhysicsIntegrationTest {
             for (int i = 0; i < 1200; i++) space.update(DT, 0);
             assertEquals(.7, robot.jointPosition("hinge"), .04);
             assertEquals(.2, robot.jointPosition("slide"), .02);
-            assertEquals(2, space.countJoints());
+            assertEquals(3, space.countJoints());
             arm.setPower(-.5); slide.setPower(-.5);
             for (int i = 0; i < 1200; i++) space.update(DT, 0);
             assertEquals(0, robot.jointPosition("hinge"), .04);

@@ -35,7 +35,7 @@ public final class RobotUrdf {
         }
     }
     public record Joint(String name, String type, String parent, String child, Pose origin,
-                        double[] axis, Double lower, Double upper, Double effort) {}
+                        double[] axis, Double lower, Double upper, Double effort, String mimic, double multiplier) {}
     public record Actuator(String name, double mechanicalReduction) {}
     public record Transmission(String name, String joint, List<Actuator> actuators) {}
 
@@ -139,7 +139,12 @@ public final class RobotUrdf {
                 throw new IllegalArgumentException("Zero axis on joint " + name);
             Double effort = limit != null && limit.hasAttribute("effort") ? number(limit, "effort") : null;
             if (effort != null && effort <= 0) throw new IllegalArgumentException("Non-positive effort on joint " + name);
-            Joint joint = new Joint(name, type, parent, child, pose(el), xyz, lower, upper, effort);
+            Element mimic = child(el, "mimic");
+            String source = mimic == null ? null : required(mimic, "joint");
+            double multiplier = mimic != null && mimic.hasAttribute("multiplier") ? number(mimic, "multiplier") : 1;
+            if (mimic != null && (multiplier != 1 || (mimic.hasAttribute("offset") && number(mimic, "offset") != 0)))
+                throw new IllegalArgumentException("Mimic supports 1:1 multiplier and zero offset: " + name);
+            Joint joint = new Joint(name, type, parent, child, pose(el), xyz, lower, upper, effort, source, multiplier);
             if (joints.putIfAbsent(name, joint) != null) throw new IllegalArgumentException("Duplicate joint " + name);
         }
         List<String> roots = links.keySet().stream().filter(k -> !children.contains(k)).toList();
@@ -164,6 +169,15 @@ public final class RobotUrdf {
             if (actuators.isEmpty()) throw new IllegalArgumentException("Transmission " + name + " has no actuators");
             if (transmissions.putIfAbsent(name, new Transmission(name, joint, List.copyOf(actuators))) != null)
                 throw new IllegalArgumentException("Duplicate transmission " + name);
+        }
+        for (Joint joint : joints.values()) {
+            if (joint.mimic() == null) continue;
+            Joint source = joints.get(joint.mimic());
+            if (source == null || source.mimic() != null || source.name().equals(joint.name())
+                || !source.type().equals("continuous") || !joint.type().equals("continuous")
+                || !source.parent().equals(joint.parent())
+                || transmissions.values().stream().anyMatch(t -> t.joint().equals(joint.name())))
+                throw new IllegalArgumentException("Mimic requires passive continuous siblings and a non-mimic source: " + joint.name());
         }
         return new RobotUrdf(required(robot, "name"), links, joints, transmissions, rootLink);
     }

@@ -22,6 +22,9 @@ public class SimConfig {
     public String presetMotors;
     public String urdf;
     public String calibration;
+    public DifferentialDriveConfig drive;
+    public MotorIntakeConfig intake;
+    public double startHeightM = .1;
     public Double totalMassKg;
     public int vhacdMaxHulls = 8;
     public long imuLatencyMs = 8;
@@ -60,6 +63,11 @@ public class SimConfig {
                     requiredNumber(values, "velocity_gain_nm_per_rad_s"), requiredNumber(values, "deadband_rad")));
             }
         }
+        if (root.containsKey("drive")) config.drive = DifferentialDriveConfig.parse((Map<String, Object>) root.get("drive"));
+        if (root.containsKey("intake")) config.intake = MotorIntakeConfig.parse((Map<String, Object>) root.get("intake"));
+        if (root.containsKey("start_height_m")) config.startHeightM = ((Number) root.get("start_height_m")).doubleValue();
+        if (!Double.isFinite(config.startHeightM) || config.startHeightM < 0)
+            throw new IllegalArgumentException("start_height_m must be finite and nonnegative");
         return config;
     }
     private static double requiredNumber(Map<String, Object> values, String key) {

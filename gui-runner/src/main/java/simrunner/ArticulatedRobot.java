@@ -83,7 +83,11 @@ final class ArticulatedRobot implements PhysicsTickListener {
             body.setEnableSleep(false);
             bodies.put(part.name(), new Body(part, body, bodyNode));
         }
-        chassisNode = bodies.get(scene.urdf.rootLink).node();
+        Body chassis = bodies.get(scene.urdf.rootLink);
+        chassisNode = chassis.node();
+        world.setRobotFrame(chassis.part().principalRotation().inverse(),
+            chassis.part().principalRotation().inverse().mult(chassis.part().com().negate()));
+        world.constrainChassisLevel();
         float assemblyYawInertia = 0;
         Vector3f chassisCenter = world.getChassisPosition();
         for (Body body : bodies.values()) {
@@ -117,6 +121,17 @@ final class ArticulatedRobot implements PhysicsTickListener {
                 }
             }
             axes.add(axis);
+        }
+        for (Axis follower : axes) {
+            if (follower.joint.mimic() == null) continue;
+            Axis source = axes.stream().filter(a -> a.joint.name().equals(follower.joint.mimic())).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Mimic source must be a physical mechanism"));
+            Vector3f a = source.parent.control().getPhysicsRotation().mult(source.axisParent);
+            Vector3f b = follower.parent.control().getPhysicsRotation().mult(follower.axisParent);
+            if (a.dot(b) < .999f || follower.joint.multiplier() != 1)
+                throw new IllegalArgumentException("Physical mimic supports 1:1 parallel shafts with matching axis directions");
+            world.space().add(new com.jme3.bullet.joints.GearJoint(source.child.control(), follower.child.control(),
+                source.axisChild, follower.axisChild, (float) (-1 / follower.joint.multiplier())));
         }
         world.space().addTickListener(this);
         System.out.println("[PHYSICS] Imported " + bodies.size() + " dynamic bodies and " + axes.size() + " mechanism joints; mass=" + scene.urdf.totalMassKg());

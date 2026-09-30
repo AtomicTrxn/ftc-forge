@@ -40,6 +40,7 @@ final class ImportedRobotScene {
     final HardwareMap hardwareMap;
     private final AssetManager assets;
     private final int vhacdMaxHulls;
+    private final java.util.Set<String> driveMotors;
     final Node root = new Node("imported-robot");
     private final Map<String, Node> jointNodes = new LinkedHashMap<>();
     final Map<String, Node> linkNodes = new LinkedHashMap<>();
@@ -47,6 +48,13 @@ final class ImportedRobotScene {
 
     ImportedRobotScene(RobotUrdf urdf, Path urdfPath, HardwareMap hardwareMap, AssetManager assets,
                        int vhacdMaxHulls) throws Exception {
+        this(urdf, urdfPath, hardwareMap, assets, vhacdMaxHulls,
+            java.util.Set.of("left_front_drive", "right_front_drive", "left_back_drive", "right_back_drive"));
+    }
+
+    ImportedRobotScene(RobotUrdf urdf, Path urdfPath, HardwareMap hardwareMap, AssetManager assets,
+                       int vhacdMaxHulls, java.util.Set<String> driveMotors) throws Exception {
+        this.driveMotors = java.util.Set.copyOf(driveMotors);
         this.urdf = urdf;
         this.urdfPath = urdfPath;
         this.hardwareMap = hardwareMap;
@@ -78,7 +86,7 @@ final class ImportedRobotScene {
             geometry.setLocalRotation(rotation(visual.origin().rpy()).mult(shapeAxisRotation(visual.geometry())));
             linkNode.attachChild(geometry);
         }
-        for (RobotUrdf.Collision c : link.visuals().isEmpty() ? link.collisions() : List.<RobotUrdf.Collision>of()) {
+        for (RobotUrdf.Collision c : link.visuals().isEmpty() && link.massKg() > 0 ? link.collisions() : List.<RobotUrdf.Collision>of()) {
             Geometry geometry = new Geometry(linkName + "-collision", visualMesh(c.geometry()));
             Material material = new Material(assets, "Common/MatDefs/Misc/Unshaded.j3md");
             material.setColor("Color", linkName.equals(urdf.rootLink) ? ColorRGBA.Blue : ColorRGBA.Gray);
@@ -102,7 +110,10 @@ final class ImportedRobotScene {
         for (RobotUrdf.Joint joint : urdf.joints.values()) {
             if (joint.type().equals("fixed") || !wheelLinks.contains(joint.child())) continue;
             Node mount = jointNodes.get(joint.name());
-            double value = urdf.jointPosition(joint.name(), hardwareMap);
+            double value = urdf.transmissions.values().stream().filter(t -> t.joint().equals(joint.name()))
+                .flatMap(t -> t.actuators().stream()).mapToDouble(a ->
+                    hardwareMap.get(simcore.SimDcMotorEx.class, a.name()).getPhysicalShaftRadians() / a.mechanicalReduction())
+                .average().orElse(0);
             Vector3f axis = position(joint.axis()).normalizeLocal();
             if (joint.type().equals("prismatic")) {
                 mount.setLocalTranslation(position(joint.origin().xyz()).add(rotation(joint.origin().rpy()).mult(axis.mult((float) value))));
@@ -120,8 +131,7 @@ final class ImportedRobotScene {
 
     boolean isDriveWheel(RobotUrdf.Joint joint) {
         return urdf.transmissions.values().stream().filter(t -> t.joint().equals(joint.name()))
-            .flatMap(t -> t.actuators().stream()).anyMatch(a -> List.of("left_front_drive",
-                "right_front_drive", "left_back_drive", "right_back_drive").contains(a.name()));
+            .flatMap(t -> t.actuators().stream()).anyMatch(a -> driveMotors.contains(a.name()));
     }
 
     private void assignParts(String link, String owner, boolean wheelBranch) {
@@ -216,13 +226,17 @@ final class ImportedRobotScene {
     }
 
     private CollisionShape physicsShape(RobotUrdf.Geometry g) throws Exception {
-        return switch (g.kind()) {
+        CollisionShape shape = switch (g.kind()) {
             case "box" -> new BoxCollisionShape(new Vector3f((float) g.dimensions()[0] / 2,
                 (float) g.dimensions()[2] / 2, (float) g.dimensions()[1] / 2));
             case "sphere" -> new SphereCollisionShape((float) g.dimensions()[0]);
-            case "cylinder", "mesh" -> decompose(visualMesh(g));
+            case "cylinder" -> new com.jme3.bullet.collision.shapes.CylinderCollisionShape(
+                new Vector3f((float) g.dimensions()[0], (float) g.dimensions()[0], (float) g.dimensions()[1] / 2), 2);
+            case "mesh" -> decompose(visualMesh(g));
             default -> throw new IllegalArgumentException("Unsupported geometry " + g.kind());
         };
+        if (shape.isConvex()) shape.setMargin(.002f);
+        return shape;
     }
 
     private CollisionShape decompose(Mesh mesh) {
@@ -240,7 +254,11 @@ final class ImportedRobotScene {
         var hulls = Vhacd4.compute(vertices, triangles, params);
         if (hulls.isEmpty()) throw new IllegalArgumentException("V-HACD produced no hulls for imported mesh");
         CompoundCollisionShape result = new CompoundCollisionShape();
-        for (Vhacd4Hull hull : hulls) result.addChildShape(new HullCollisionShape(hull));
+        for (Vhacd4Hull hull : hulls) {
+            HullCollisionShape shape = new HullCollisionShape(hull);
+            shape.setMargin(.002f);
+            result.addChildShape(shape);
+        }
         System.out.println("[IMPORT] V-HACD produced " + hulls.size() + " hulls for imported geometry");
         return result;
     }

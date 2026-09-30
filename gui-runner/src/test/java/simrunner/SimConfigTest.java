@@ -22,4 +22,18 @@ class SimConfigTest {
             + fields.replace(",\"deadband_rad\":0.01", "") + "}}}");
         assertThrows(IllegalArgumentException.class, () -> SimConfig.load(team));
     }
+    @Test void validatesDriveAndMotorIntakeConfiguration() throws Exception {
+        String json = "{\"drive\":{\"type\":\"differential\",\"left_motor\":\"left\",\"right_motor\":\"right\","
+            + "\"track_width_m\":0.38,\"wheel_radius_m\":0.045,\"left_shaft_sign\":-1,\"right_shaft_sign\":1},"
+            + "\"intake\":{\"motor\":\"intake\",\"shaft_sign\":1,\"min_speed_rad_s\":1,\"point_xyz_m\":[0.24,0,0.06],\"capture_radius_m\":0.12}}";
+        Files.writeString(team.resolve("sim.config"), json);
+        var config = SimConfig.load(team);
+        assertEquals(.38, config.drive.trackWidthM()); assertEquals(.06, config.intake.point().y, .001);
+        for (String invalid : new String[]{json.replace("0.38", "0"), json.replace("\"right\"", "\"left\""),
+                json.replace("-1", "0"), json.replace("[0.24,0,0.06]", "[0.24]"), json.replace("0.12", "-0.12"),
+                json.replace("differential", "unknown")}) {
+            Files.writeString(team.resolve("sim.config"), invalid);
+            assertThrows(IllegalArgumentException.class, () -> SimConfig.load(team));
+        }
+    }
 }
