@@ -30,6 +30,19 @@ class PhysicsIntegrationTest {
     @BeforeAll static void nativePhysics() { NativeLibraryLoader.loadNativeLibrary("bulletjme", true); }
     private static final float DT = 1f / 60;
 
+    @Test void visualOnlyCadIsRejectedForPhysicsWithPreviewGuidance() throws Exception {
+        Path file = temp.resolve("preview-only.urdf");
+        Files.writeString(file, "<robot name='cad'>" + link("base", "0 0 0", ".1 .1 .1", 1)
+            .replace("<collision>", "<visual>").replace("</collision>", "</visual>") + "</robot>");
+        PhysicsSpace space = new PhysicsSpace(PhysicsSpace.BroadphaseType.DBVT);
+        try {
+            ImportedRobotScene scene = new ImportedRobotScene(RobotUrdf.parse(file), file, new HardwareMap(), new DesktopAssetManager(true), 8);
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+                new ArticulatedRobot(scene, new PhysicsWorld(null, new Node(), space), new Node(), Vector3f.ZERO));
+            assertTrue(error.getMessage().contains("previewRobot"));
+        } finally { space.destroy(); }
+    }
+
     @Test void principalFrameProducesCrossAxisAngularResponse() {
         PrincipalInertia inertia = new PrincipalInertia();
         inertia.addRotated(new double[][] {{2, .6, 0}, {.6, 3, 0}, {0, 0, 4}}, new com.jme3.math.Quaternion());

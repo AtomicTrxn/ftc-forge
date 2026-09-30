@@ -39,8 +39,17 @@ Place `sim.config` at the team project root. Paths inside it are relative to tha
 
 To import custom robot geometry, add `urdf` and optionally `total_mass_kg` and `vhacd_max_hulls`. See [the import guide](gui-runner/ROBOT_IMPORT.md) for the XML/URDF pairing, a sample package, and the current CAD export constraints.
 
+To inspect an exported CAD package before supplying hardware and collision data:
+
+```sh
+./gradlew :gui-runner:previewRobot --args='/absolute/package/urdf/robot.urdf'
+```
+
+Drag to orbit and scroll to zoom. An optional second argument saves a PNG and closes the preview. This viewer loads Onshape visual meshes, colors, and assembly frames without running physics or an OpMode.
+
+
 ## Current limits
 
 The drivetrain uses capped traction impulses to approach mecanum wheel speed while preserving external pushes, gravity, and contact response. Imported arm/slide mechanisms use separate dynamic bodies and constrained joints; encoders follow actual joint motion, so contacts can stall them. See [the physics implementation and evidence](tasks/physics/PLAN.md).
 
-Imported bodies use the full CAD inertia tensor in principal-axis frames. Nonadjacent robot bodies collide with each other; directly joined bodies are exempt because their CAD geometry may overlap at the joint. Each driven servo joint requires explicit torque, speed, travel, and feedback parameters. [The calibration guide](gui-runner/CALIBRATION.md) explains how to record robot telemetry, fit a profile, and load it into the simulator. Real-world accuracy remains unmeasured until a team supplies a hardware recording. The chassis stays level and drive wheels do not simulate individual rollers. A real FTC-team Onshape export was attempted but could not complete without API credentials; the importer has been validated with its bundled example and a published exporter package. See [the refinement plan](tasks/physics-refinement/PLAN.md) and [application review](tasks/review/application-gap-review-and-plan.md).
+Imported bodies use the full CAD inertia tensor in principal-axis frames. Nonadjacent robot bodies collide with each other; directly joined bodies are exempt because their CAD geometry may overlap at the joint. Each driven servo joint requires explicit torque, speed, travel, and feedback parameters. [The calibration guide](gui-runner/CALIBRATION.md) explains how to record robot telemetry, fit a profile, and load it into the simulator. Real-world accuracy remains unmeasured until a team supplies a hardware recording. The chassis stays level and drive wheels do not simulate individual rollers. A native Onshape robot export has been loaded and rendered; that file contains only fixed joints and visual geometry, so powered simulation still needs collision shapes and actuator bindings. See [the refinement plan](tasks/physics-refinement/PLAN.md) and [application review](tasks/review/application-gap-review-and-plan.md).

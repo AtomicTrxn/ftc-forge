@@ -37,6 +37,9 @@ final class ArticulatedRobot implements PhysicsTickListener {
                      Map<String, ServoModel.Spec> servoSpecs) throws Exception {
         this.scene = scene;
         this.servoSpecs = servoSpecs;
+        if (scene.urdf.links.values().stream().allMatch(link -> link.collisions().isEmpty()))
+            throw new IllegalArgumentException("URDF has no collision geometry. Use previewRobot to inspect CAD, "
+                + "then add simplified collision shapes before running physics.");
         for (RobotUrdf.Transmission tx : scene.urdf.transmissions.values()) {
             if (scene.isDriveWheel(scene.urdf.joints.get(tx.joint()))) continue;
             for (RobotUrdf.Actuator actuator : tx.actuators()) {

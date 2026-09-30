@@ -21,6 +21,7 @@ public final class RobotUrdf {
     public record Pose(double[] xyz, double[] rpy) {}
     public record Geometry(String kind, double[] dimensions, String meshFile, double[] meshScale) {}
     public record Collision(Pose origin, Geometry geometry) {}
+    public record Visual(Pose origin, Geometry geometry, double[] rgba) {}
     public record Inertia(double ixx, double iyy, double izz, double ixy, double ixz, double iyz) {
         Inertia scaled(double factor) {
             return new Inertia(ixx * factor, iyy * factor, izz * factor,
@@ -28,9 +29,9 @@ public final class RobotUrdf {
         }
     }
     public record Link(String name, double massKg, Pose inertialOrigin, Inertia inertia,
-                       List<Collision> collisions) {
+                       List<Collision> collisions, List<Visual> visuals) {
         Link scaled(double factor) {
-            return new Link(name, massKg * factor, inertialOrigin, inertia.scaled(factor), collisions);
+            return new Link(name, massKg * factor, inertialOrigin, inertia.scaled(factor), collisions, visuals);
         }
     }
     public record Joint(String name, String type, String parent, String child, Pose origin,
@@ -79,42 +80,39 @@ public final class RobotUrdf {
         Map<String, Link> links = new LinkedHashMap<>();
         Map<String, Joint> joints = new LinkedHashMap<>();
         Map<String, Transmission> transmissions = new LinkedHashMap<>();
+        Map<String, double[]> colors = new LinkedHashMap<>();
+        for (Element material : children(robot, "material")) {
+            Element color = child(material, "color");
+            if (color != null) colors.put(required(material, "name"), vector(required(color, "rgba"), 4));
+        }
         for (Element el : children(robot, "link")) {
             String name = required(el, "name");
             Element inertial = child(el, "inertial");
-            if (inertial == null) throw new IllegalArgumentException("Link " + name + " has no <inertial>");
-            double mass = number(requiredChild(inertial, "mass"), "value");
+            // CAD exporters introduce geometry-free assembly frames with no physical mass.
+            if (inertial == null && (!children(el, "visual").isEmpty() || !children(el, "collision").isEmpty()))
+                throw new IllegalArgumentException("Link " + name + " has geometry but no <inertial>");
+            double mass = inertial == null ? 0 : number(requiredChild(inertial, "mass"), "value");
             if (mass < 0) throw new IllegalArgumentException("Negative mass on link " + name);
-            Element tensor = requiredChild(inertial, "inertia");
-            Inertia inertia = new Inertia(number(tensor, "ixx"), number(tensor, "iyy"), number(tensor, "izz"),
+            Element tensor = inertial == null ? null : requiredChild(inertial, "inertia");
+            Inertia inertia = tensor == null ? new Inertia(0, 0, 0, 0, 0, 0) : new Inertia(number(tensor, "ixx"), number(tensor, "iyy"), number(tensor, "izz"),
                 number(tensor, "ixy"), number(tensor, "ixz"), number(tensor, "iyz"));
             List<Collision> collisions = new ArrayList<>();
             for (Element c : children(el, "collision")) {
-                Element shape = requiredChild(c, "geometry");
-                Geometry geometry;
-                if (child(shape, "box") != null) {
-                    geometry = new Geometry("box", vector(requiredChild(shape, "box").getAttribute("size"), 3), null, null);
-                } else if (child(shape, "cylinder") != null) {
-                    Element cylinder = child(shape, "cylinder");
-                    geometry = new Geometry("cylinder", new double[]{number(cylinder, "radius"), number(cylinder, "length")}, null, null);
-                } else if (child(shape, "sphere") != null) {
-                    geometry = new Geometry("sphere", new double[]{number(child(shape, "sphere"), "radius")}, null, null);
-                } else if (child(shape, "mesh") != null) {
-                    Element mesh = child(shape, "mesh");
-                    geometry = new Geometry("mesh", null, required(mesh, "filename"),
-                        mesh.hasAttribute("scale") ? vector(mesh.getAttribute("scale"), 3) : new double[]{1, 1, 1});
-                } else throw new IllegalArgumentException("Unsupported collision geometry on link " + name);
-                if (geometry.dimensions() != null) {
-                    for (double size : geometry.dimensions())
-                        if (size <= 0) throw new IllegalArgumentException("Non-positive collision size on link " + name);
-                }
-                if (geometry.meshScale() != null) {
-                    for (double scale : geometry.meshScale())
-                        if (scale == 0) throw new IllegalArgumentException("Zero mesh scale on link " + name);
-                }
+                Geometry geometry = geometry(requiredChild(c, "geometry"));
                 collisions.add(new Collision(pose(c), geometry));
             }
-            if (links.putIfAbsent(name, new Link(name, mass, pose(inertial), inertia, List.copyOf(collisions))) != null)
+            List<Visual> visuals = new ArrayList<>();
+            for (Element visual : children(el, "visual")) {
+                Element material = child(visual, "material");
+                Element color = material == null ? null : child(material, "color");
+                double[] rgba = color != null ? vector(required(color, "rgba"), 4)
+                    : material == null ? null : colors.get(material.getAttribute("name"));
+                if (rgba != null) for (double component : rgba)
+                    if (component < 0 || component > 1) throw new IllegalArgumentException("Invalid visual color on " + name);
+                visuals.add(new Visual(pose(visual), geometry(requiredChild(visual, "geometry")), rgba));
+            }
+            Pose inertialPose = inertial == null ? new Pose(new double[3], new double[3]) : pose(inertial);
+            if (links.putIfAbsent(name, new Link(name, mass, inertialPose, inertia, List.copyOf(collisions), List.copyOf(visuals))) != null)
                 throw new IllegalArgumentException("Duplicate URDF link " + name);
         }
         if (links.isEmpty()) throw new IllegalArgumentException("URDF has no links");
@@ -250,6 +248,27 @@ public final class RobotUrdf {
         }
         return values;
     }
+    private static Geometry geometry(Element shape) {
+        Geometry geometry;
+        if (child(shape, "box") != null) {
+            geometry = new Geometry("box", vector(requiredChild(shape, "box").getAttribute("size"), 3), null, null);
+        } else if (child(shape, "cylinder") != null) {
+            Element cylinder = child(shape, "cylinder");
+            geometry = new Geometry("cylinder", new double[]{number(cylinder, "radius"), number(cylinder, "length")}, null, null);
+        } else if (child(shape, "sphere") != null) {
+            geometry = new Geometry("sphere", new double[]{number(child(shape, "sphere"), "radius")}, null, null);
+        } else if (child(shape, "mesh") != null) {
+            Element mesh = child(shape, "mesh");
+            geometry = new Geometry("mesh", null, required(mesh, "filename"),
+                mesh.hasAttribute("scale") ? vector(mesh.getAttribute("scale"), 3) : new double[]{1, 1, 1});
+        } else throw new IllegalArgumentException("Unsupported URDF geometry");
+        if (geometry.dimensions() != null) for (double size : geometry.dimensions())
+            if (size <= 0) throw new IllegalArgumentException("Non-positive geometry size");
+        if (geometry.meshScale() != null) for (double scale : geometry.meshScale())
+            if (scale == 0) throw new IllegalArgumentException("Zero mesh scale");
+        return geometry;
+    }
+
     private static Pose pose(Element parent) {
         Element origin = child(parent, "origin");
         return origin == null ? new Pose(new double[3], new double[3]) : new Pose(
