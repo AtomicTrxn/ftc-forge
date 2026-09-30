@@ -91,6 +91,8 @@ public class SimulatorApp extends SimpleApplication {
 
     @Override
     public void simpleInitApp() {
+        rootNode.addLight(new com.jme3.light.AmbientLight(new ColorRGBA(.55f, .55f, .55f, 1)));
+        rootNode.addLight(new com.jme3.light.DirectionalLight(new Vector3f(-1, -2, -1).normalizeLocal(), ColorRGBA.White));
         bulletAppState = new BulletAppState();
         stateManager.attach(bulletAppState);
         physicsWorld = new PhysicsWorld(assetManager, rootNode, bulletAppState);

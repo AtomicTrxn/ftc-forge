@@ -64,3 +64,14 @@ tasks.register('calibrate', JavaExec) {
     mainClass = 'simrunner.CalibrationCli'
     workingDir = rootProject.projectDir
 }
+
+tasks.register('previewRobot', JavaExec) {
+    group = 'application'
+    description = 'Previews URDF CAD geometry without running an OpMode or physics.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'simrunner.RobotPreviewApp'
+    workingDir = rootProject.projectDir
+    // PNG encoding must not initialize AWT's Cocoa event loop beside GLFW on macOS.
+    jvmArgs = ['-XstartOnFirstThread', '-Djava.awt.headless=true']
+    maxHeapSize = '2g'
+}

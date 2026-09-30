@@ -43,6 +43,7 @@ final class ImportedRobotScene {
     final Node root = new Node("imported-robot");
     private final Map<String, Node> jointNodes = new LinkedHashMap<>();
     final Map<String, Node> linkNodes = new LinkedHashMap<>();
+    private final Map<String, Mesh> meshCache = new LinkedHashMap<>();
 
     ImportedRobotScene(RobotUrdf urdf, Path urdfPath, HardwareMap hardwareMap, AssetManager assets,
                        int vhacdMaxHulls) throws Exception {
@@ -59,7 +60,25 @@ final class ImportedRobotScene {
         Node linkNode = new Node(linkName);
         parent.attachChild(linkNode);
         linkNodes.put(linkName, linkNode);
-        for (RobotUrdf.Collision c : link.collisions()) {
+        for (RobotUrdf.Visual visual : link.visuals()) {
+            Geometry geometry = new Geometry(linkName + "-visual", visualMesh(visual.geometry()));
+            double[] rgba = visual.rgba();
+            ColorRGBA color = rgba == null ? ColorRGBA.Gray : new ColorRGBA((float) rgba[0],
+                (float) rgba[1], (float) rgba[2], (float) rgba[3]);
+            Material material = new Material(assets, "Common/MatDefs/Light/Lighting.j3md");
+            material.setBoolean("UseMaterialColors", true);
+            material.setColor("Diffuse", color);
+            material.setColor("Ambient", color);
+            if (color.a < 1) {
+                material.getAdditionalRenderState().setBlendMode(com.jme3.material.RenderState.BlendMode.Alpha);
+                geometry.setQueueBucket(com.jme3.renderer.queue.RenderQueue.Bucket.Transparent);
+            }
+            geometry.setMaterial(material);
+            geometry.setLocalTranslation(position(visual.origin().xyz()));
+            geometry.setLocalRotation(rotation(visual.origin().rpy()).mult(shapeAxisRotation(visual.geometry())));
+            linkNode.attachChild(geometry);
+        }
+        for (RobotUrdf.Collision c : link.visuals().isEmpty() ? link.collisions() : List.<RobotUrdf.Collision>of()) {
             Geometry geometry = new Geometry(linkName + "-collision", visualMesh(c.geometry()));
             Material material = new Material(assets, "Common/MatDefs/Misc/Unshaded.j3md");
             material.setColor("Color", linkName.equals(urdf.rootLink) ? ColorRGBA.Blue : ColorRGBA.Gray);
@@ -182,7 +201,16 @@ final class ImportedRobotScene {
                 (float) g.dimensions()[1] / 2);
             case "cylinder" -> new Cylinder(12, 24, (float) g.dimensions()[0], (float) g.dimensions()[1], true);
             case "sphere" -> new Sphere(12, 24, (float) g.dimensions()[0]);
-            case "mesh" -> StlMeshLoader.load(resolveMesh(g.meshFile()), g.meshScale());
+            case "mesh" -> {
+                Path path = resolveMesh(g.meshFile());
+                String key = path.toString() + java.util.Arrays.toString(g.meshScale());
+                Mesh mesh = meshCache.get(key);
+                if (mesh == null) {
+                    mesh = StlMeshLoader.load(path, g.meshScale(), 500_000);
+                    meshCache.put(key, mesh);
+                }
+                yield mesh;
+            }
             default -> throw new IllegalArgumentException("Unsupported geometry " + g.kind());
         };
     }
@@ -198,6 +226,8 @@ final class ImportedRobotScene {
     }
 
     private CollisionShape decompose(Mesh mesh) {
+        if (mesh.getTriangleCount() > 200_000)
+            throw new IllegalArgumentException("Collision STL exceeds 200,000 triangles; use simplified collision geometry");
         FloatBuffer positions = mesh.getFloatBuffer(com.jme3.scene.VertexBuffer.Type.Position).duplicate();
         positions.rewind();
         float[] vertices = new float[positions.remaining()];
@@ -223,6 +253,13 @@ final class ImportedRobotScene {
         Path resolved = urdfPath.toAbsolutePath().getParent().resolve(path).normalize();
         if (!java.nio.file.Files.exists(resolved) && file.startsWith("package://") && path.contains("/")) {
             resolved = urdfPath.toAbsolutePath().getParent().resolve(path.substring(path.indexOf('/') + 1)).normalize();
+            String packageName = path.substring(0, path.indexOf('/'));
+            for (Path ancestor = urdfPath.toAbsolutePath().getParent(); ancestor != null; ancestor = ancestor.getParent()) {
+                if (ancestor.getFileName() != null && ancestor.getFileName().toString().equals(packageName)) {
+                    resolved = ancestor.resolve(path.substring(path.indexOf('/') + 1)).normalize();
+                    break;
+                }
+            }
         }
         if (!resolved.toString().toLowerCase().endsWith(".stl"))
             throw new IllegalArgumentException("Imported mesh must be STL: " + file);
