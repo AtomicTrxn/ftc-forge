@@ -48,6 +48,9 @@ public class PhysicsWorld {
         new physics.MecanumKinematics.ChassisVelocity(0, 0, 0);
     private com.jme3.math.Quaternion bodyToRobot = new com.jme3.math.Quaternion();
     private Vector3f robotOriginInBody = new Vector3f();
+    private TireDrive tireDrive;
+    private FlexibleIntake flexibleIntake;
+    private float flexVisualTime;
     private float driveMassKg;
     private float driveYawInertia;
     private double driveResponseTimeS = .10, driveMaxAccelMps2 = 7.8;
@@ -182,6 +185,7 @@ public class PhysicsWorld {
 
     private void applyDriveImpulse(float dt) {
         if (dt <= 0 || !chassisControl.isDynamic()) return;
+        if (tireDrive != null) { tireDrive.tick(dt); return; }
         Vector3f desired = getChassisRotation().mult(new Vector3f(
             (float) driveTarget.vx, 0, (float) -driveTarget.vy));
         Vector3f actual = chassisControl.getLinearVelocity();
@@ -204,6 +208,19 @@ public class PhysicsWorld {
         driveMassKg = massKg;
         driveYawInertia = yawInertia;
     }
+
+    void installTires(TireDrive model) { tireDrive = model; }
+    TireDrive tireDrive() { return tireDrive; }
+    void installFlexibleIntake(FlexibleIntake model) { flexibleIntake=model; }
+    FlexibleIntake flexibleIntake() { return flexibleIntake; }
+    void addFlexibleYawInertia(float moment) { driveYawInertia += moment; }
+    void updateFlexibleVisuals(float dt) {
+        flexVisualTime += dt;
+        if (flexibleIntake != null && flexVisualTime >= 1f/30) {flexibleIntake.updateVisual();flexVisualTime=0;}
+    }
+    RigidBodyControl gamePieceBody() { return gamePieceControl; }
+    float driveMass() { return driveMassKg; }
+    float driveYawInertia() { return driveYawInertia; }
 
     RigidBodyControl chassisBody() { return chassisControl; }
     PhysicsSpace space() { return physicsSpace; }
@@ -242,6 +259,10 @@ public class PhysicsWorld {
      */
     public void updateIntake(boolean intakeActive, Vector3f intakePointWorld, float captureRadiusM) {
         if (gamePieceControl == null) return;
+        if (flexibleIntake != null) {
+            pieceHeld = flexibleIntake.contains(gamePieceControl.getPhysicsLocation());
+            return; // Contact mode keeps the game piece in Bullet, including when contained.
+        }
 
         if (intakeActive && !pieceHeld) {
             float distance = gamePieceControl.getPhysicsLocation().distance(intakePointWorld);
@@ -267,7 +288,7 @@ public class PhysicsWorld {
     }
 
     public boolean isPieceHeld() { return pieceHeld; }
-    public Vector3f getGamePiecePosition() { return pieceHeld ? gamePieceNode.getLocalTranslation() : gamePieceControl.getPhysicsLocation(); }
+    public Vector3f getGamePiecePosition() { return pieceHeld && flexibleIntake == null ? gamePieceNode.getLocalTranslation() : gamePieceControl.getPhysicsLocation(); }
 
     private Material unshaded(ColorRGBA color) {
         Material m = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");

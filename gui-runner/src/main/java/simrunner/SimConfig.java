@@ -24,6 +24,8 @@ public class SimConfig {
     public String calibration;
     public DifferentialDriveConfig drive;
     public MotorIntakeConfig intake;
+    public TireDriveConfig tires;
+    public FlexibleIntakeConfig flexibleIntake;
     public double startHeightM = .1;
     public Double totalMassKg;
     public int vhacdMaxHulls = 8;
@@ -64,7 +66,15 @@ public class SimConfig {
             }
         }
         if (root.containsKey("drive")) config.drive = DifferentialDriveConfig.parse((Map<String, Object>) root.get("drive"));
+        if (root.containsKey("tires")) {
+            config.tires = TireDriveConfig.parse((Map<String, Object>) root.get("tires"));
+            if (config.drive == null || config.urdf == null) throw new IllegalArgumentException("tires requires differential drive and URDF");
+        }
         if (root.containsKey("intake")) config.intake = MotorIntakeConfig.parse((Map<String, Object>) root.get("intake"));
+        if (root.containsKey("flexible_intake")) {
+            config.flexibleIntake = FlexibleIntakeConfig.parse((Map<String,Object>)root.get("flexible_intake"));
+            if (config.urdf == null || config.intake == null) throw new IllegalArgumentException("flexible_intake requires URDF and motor intake");
+        }
         if (root.containsKey("start_height_m")) config.startHeightM = ((Number) root.get("start_height_m")).doubleValue();
         if (!Double.isFinite(config.startHeightM) || config.startHeightM < 0)
             throw new IllegalArgumentException("start_height_m must be finite and nonnegative");

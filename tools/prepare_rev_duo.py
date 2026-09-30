@@ -72,7 +72,7 @@ def transmission(robot, j, motor, reduction):
     ET.SubElement(a, 'mechanicalReduction').text = str(reduction)
 
 
-def prepare(source, destination):
+def prepare(source, destination, contact_models=False):
     source = Path(source).resolve()
     destination = Path(destination).resolve()
     if destination.exists():
@@ -88,6 +88,9 @@ def prepare(source, destination):
     required = {'root', 'rev_41_1300', 'rev_41_1602', 'rev_41_1603', 'rev_41_1602_13', 'rev_41_1603_13',
                 'rev_41_1190', 'rev_41_1190_29', 'tread', 'tread_1', 'rev_41_1354_default', 'rev_41_1354_default_2',
                 '5mm_x_400mm_hex_shaft__rev_41_1362_', '5mm_x_400mm_hex_shaft__rev_41_1362__1'}
+    if contact_models:
+        required |= {'flap', 'flap_1', 'flap_2', 'flap_3', 'flap_4', 'flap_5',
+            'polycarbonate_sheet___2mm___8mm_grid_pattern___112_x_248_mm'}
     if not required <= links.keys():
         raise ValueError('Export lacks required wheel, motor or gearbox components')
     identity = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
@@ -145,7 +148,7 @@ def prepare(source, destination):
         groups[name] = (pivot, members)
         body = frame(robot, name)
         j = joint(robot, name+'_joint', 'sim_base', name, pivot, moving=True)
-        collision(body, [0, 0, 0], 'cylinder', radius='.025' if name.endswith('upper') else '.03', length='.23')
+        collision(body, [0, 0, 0], 'cylinder', radius='.025' if name.endswith('upper') else ('.013' if contact_models else '.03'), length='.23')
         if name.endswith('upper'):
             transmission(robot, j.get('name'), 'intake', 1)
         else:
@@ -158,6 +161,15 @@ def prepare(source, destination):
             owned[n] = group
     for name, original in links.items():
         link = copy.deepcopy(original)
+        if contact_models and name in {'flap', 'flap_1', 'flap_2', 'flap_3', 'flap_4', 'flap_5'}:
+            mass = link.find('inertial/mass')
+            old = float(mass.get('value'))
+            if old <= 0:
+                raise ValueError('Flap requires source inertia and positive mass: '+name)
+            mass.set('value', '.005')  # explicit unmeasured 5g core+paddle baseline
+            inertia = link.find('inertial/inertia')
+            for key, value in inertia.attrib.items():
+                inertia.set(key, str(float(value)*.005/old))
         for mesh in link.findall('.//mesh'):
             uri = mesh.get('filename')
             if not uri.startswith('package://'):
@@ -169,6 +181,10 @@ def prepare(source, destination):
             if not path.is_relative_to(source.parent.parent) or not path.is_file():
                 raise ValueError('Mesh outside package or absent: '+uri)
             mesh.set('filename', str(path))
+        if contact_models and name == 'polycarbonate_sheet___2mm___8mm_grid_pattern___112_x_248_mm':
+            # Native STL bounds: x=.208..456, y=0..112, z=+/-.001 m.
+            # Retain its original tilted link pose; this is the existing intake ramp.
+            collision(link, [.332, .056, 0], 'box', size='.248 .112 .002')
         robot.append(link)
         a, v = poses[name]
         parent = owned.get(name, 'sim_base')
@@ -184,12 +200,32 @@ def prepare(source, destination):
     ET.ElementTree(robot).write(destination/'robot.urdf', encoding='utf-8', xml_declaration=True)
     config = json.loads((destination/'sim.config').read_text())
     config['drive']['track_width_m'] = abs(poses['tread'][1][1]-poses['tread_1'][1][1])
+    if contact_models:
+        config['tires'] = {'traction': {'static_mu': .9, 'sliding_mu': .7, 'lateral_scale': 1,
+            'stiffness_n_per_mps': 100, 'transition_mps': .15},
+            'omni': {'static_mu': .9, 'sliding_mu': .7, 'lateral_scale': .05,
+            'stiffness_n_per_mps': 100, 'transition_mps': .15},
+            'omni_joints': ['left_rear_joint', 'right_rear_joint'],
+            'reflected_motor_inertia_kg_m2': .0015, 'contact_tolerance_m': .004}
+        config['flexible_intake'] = {'links': ['flap', 'flap_1', 'flap_2', 'flap_3', 'flap_4', 'flap_5'],
+            'segments_per_arm': 3, 'flex_mass_fraction': .9, 'width_m': .0116118,
+            'arm_length_m': .0507965, 'thickness_m': .003, 'stiffness_nm_per_rad': .003,
+            'damping_ratio': .5, 'max_bend_rad': 1.2, 'friction': 1,
+            'contact_stiffness_n_per_m': 500, 'contact_damping_ns_per_m': .3,
+            'containment_min_xyz_m': [-.02, -.105, 0], 'containment_max_xyz_m': [.20, .105, .10]}
     (destination/'sim.config').write_text(json.dumps(config, indent=2)+'\n')
     report = {'source_sha256': hashlib.sha256(raw).hexdigest(), 'source_links': len(links),
               'preserved_visuals': len(tree.findall('.//visual')), 'cad_mass_kg': sum(float(l.find('inertial/mass').get('value')) for l in links.values() if l.find('inertial/mass') is not None),
               'drive_track_width_m': config['drive']['track_width_m'], 'assemblies': {g: sorted(m) for g, (_, m) in groups.items()},
               'limits': ['CAD mass unmeasured', 'Collision envelopes approximate', 'Aggregate planar traction, no individual tire slip',
                          'Gearbox losses uncalibrated', 'Ideal 1:1 intake chain coupling', 'Proximity capture, illustrative torus game piece']}
+    if contact_models:
+        report['flap_mass_override_kg_each'] = .005
+        report['prepared_mass_kg'] = sum(float(m.get('value')) for m in robot.findall('link/inertial/mass'))
+        report['limits'] = ['CAD mass unmeasured; six flaps overridden to 5g each', 'Collision envelopes approximate',
+            'Quasi-static equal wheel loads; flat static support only', 'Tire friction and reflected inertia unmeasured',
+            'Segmented rubber beams; stiffness, friction and damping unmeasured', 'Gearbox losses uncalibrated',
+            'Ideal 1:1 intake chain; illustrative torus; containment is spatial and not a latch']
     (destination/'preparation-report.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k != 'assemblies'}, indent=2))
     return destination
@@ -199,8 +235,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('urdf', type=Path)
     parser.add_argument('destination', type=Path)
+    parser.add_argument('--contact-models', action='store_true', help='Enable tire slip and flexible paddles with explicit unmeasured baselines')
     args = parser.parse_args()
     try:
-        prepare(args.urdf, args.destination)
+        prepare(args.urdf, args.destination, args.contact_models)
     except (ValueError, OSError, ET.ParseError) as error:
         parser.exit(2, f'Preparation failed: {error}\n')

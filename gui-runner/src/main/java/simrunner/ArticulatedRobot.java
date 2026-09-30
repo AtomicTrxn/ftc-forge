@@ -26,6 +26,7 @@ final class ArticulatedRobot implements PhysicsTickListener {
     private final ImportedRobotScene scene;
     private final Map<String, ServoModel.Spec> servoSpecs;
     private final Map<String, Body> bodies = new LinkedHashMap<>();
+    private final Map<String, Double> attachedInertia = new LinkedHashMap<>();
     private final List<Axis> axes = new ArrayList<>();
     final Node chassisNode;
 
@@ -130,7 +131,19 @@ final class ArticulatedRobot implements PhysicsTickListener {
             Vector3f b = follower.parent.control().getPhysicsRotation().mult(follower.axisParent);
             if (a.dot(b) < .999f || follower.joint.multiplier() != 1)
                 throw new IllegalArgumentException("Physical mimic supports 1:1 parallel shafts with matching axis directions");
-            world.space().add(new com.jme3.bullet.joints.GearJoint(source.child.control(), follower.child.control(),
+            if (scene.flexibleIntake != null) {
+                // GearJoint constrains angular velocity and permits accumulated phase drift under
+                // contact load. Matching continuous shafts can instead lock relative orientation
+                // while leaving their translations free: an ideal 1:1 chain position constraint.
+                Quaternion frame = new Quaternion().fromRotationMatrix(frameForX(a));
+                New6Dof chain = New6Dof.newInstance(source.child.control(), follower.child.control(),
+                    source.child.control().getPhysicsLocation(), frame, RotationOrder.XYZ);
+                for(int dof=0;dof<6;dof++) {
+                    chain.set(MotorParam.LowerLimit,dof,dof<3?1:0);
+                    chain.set(MotorParam.UpperLimit,dof,dof<3?-1:0);
+                }
+                world.space().add(chain);
+            } else world.space().add(new com.jme3.bullet.joints.GearJoint(source.child.control(), follower.child.control(),
                 source.axisChild, follower.axisChild, (float) (-1 / follower.joint.multiplier())));
         }
         world.space().addTickListener(this);
@@ -248,13 +261,13 @@ final class ArticulatedRobot implements PhysicsTickListener {
             if (joint.type().equals("prismatic")) {
                 inverseEffective = 1 / child.part().mass() + (parent.control().isDynamic() ? 1 / parent.part().mass() : 0);
             } else {
-                inverseEffective = worldAxis.dot(child.control().getInverseInertiaWorld(null).mult(worldAxis))
+                inverseEffective = 1 / rotatingInertia(this)
                     + (parent.control().isDynamic() ? worldAxis.dot(parent.control().getInverseInertiaWorld(null).mult(worldAxis)) : 0);
             }
             // Implicit back-EMF integration prevents high reductions from oscillating each step.
             if (joint.effort() != null) effort = Math.max(-joint.effort(), Math.min(joint.effort(), effort));
             effort /= 1 + dt * damping * inverseEffective;
-            double cap = (joint.type().equals("prismatic") ? 50 : 100) / inverseEffective;
+            double cap = (joint.type().equals("prismatic") ? 50 : (attachedInertia.isEmpty() ? 100 : 1000)) / inverseEffective;
             effort = Math.max(-cap, Math.min(cap, effort));
             Vector3f impulse = worldAxis.mult((float) (effort * dt));
             if (joint.type().equals("prismatic")) {
@@ -279,6 +292,30 @@ final class ArticulatedRobot implements PhysicsTickListener {
         Vector3f z = x.cross(reference).normalizeLocal();
         Vector3f y = z.cross(x).normalizeLocal();
         return new com.jme3.math.Matrix3f().setColumn(0, x).setColumn(1, y).setColumn(2, z);
+    }
+
+    void addAttachedInertia(String owner, double moment) { attachedInertia.merge(owner, moment, Double::sum); }
+
+    private double rotatingInertia(Axis axis) {
+        Vector3f worldAxis = axis.parent.control().getPhysicsRotation().mult(axis.axisParent);
+        double inertia = 1 / worldAxis.dot(axis.child.control().getInverseInertiaWorld(null).mult(worldAxis))
+            + attachedInertia.getOrDefault(axis.child.part().name(), 0.0);
+        for (Axis follower : axes) if (axis.joint.name().equals(follower.joint.mimic()))
+            inertia += rotatingInertia(follower);
+        return inertia;
+    }
+
+    RigidBodyControl bodyForLink(String name) { return bodies.get(scene.owners.get(name)).control(); }
+
+    com.jme3.math.Transform linkFrameWorld(String name) {
+        Body owner = bodies.get(scene.owners.get(name));
+        com.jme3.math.Transform local = new com.jme3.math.Transform();
+        com.jme3.scene.Spatial node = scene.linkNodes.get(name);
+        while (node != owner.node()) {
+            local.combineWithParent(node.getLocalTransform());
+            node = node.getParent();
+        }
+        return local.combineWithParent(new com.jme3.math.Transform(owner.control().getPhysicsLocation(), owner.control().getPhysicsRotation()));
     }
 
     double jointPosition(String name) {
