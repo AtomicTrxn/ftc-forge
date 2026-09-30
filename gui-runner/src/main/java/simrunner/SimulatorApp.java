@@ -262,8 +262,19 @@ public class SimulatorApp extends SimpleApplication {
             if (simConfig.totalMassKg != null) urdf = urdf.withTotalMassKg(simConfig.totalMassKg);
             urdf.validateHardwareMap(hardwareMap);
             importedScene = new ImportedRobotScene(urdf, urdfPath, hardwareMap, assetManager, simConfig.vhacdMaxHulls, java.util.Set.of(motorNames));
+            importedScene.tireContacts = simConfig.tires != null;
+            importedScene.flexibleIntake = simConfig.flexibleIntake;
             articulated = new ArticulatedRobot(importedScene, physicsWorld, rootNode, new Vector3f(0, (float) simConfig.startHeightM, 0), simConfig.servoPhysics);
             robotNode = articulated.chassisNode;
+            if (simConfig.tires != null) {
+                physicsWorld.installTires(new TireDrive(physicsWorld, hardwareMap, importedScene, differential, simConfig.tires));
+                physicsWorld.space().setAccuracy(1f / 120);
+            }
+            if (simConfig.flexibleIntake != null) {
+                physicsWorld.installFlexibleIntake(new FlexibleIntake(physicsWorld, importedScene, articulated, simConfig.flexibleIntake));
+                physicsWorld.space().setAccuracy(1f / 480);
+                physicsWorld.space().setMaxSubSteps(64);
+            }
             System.out.println("[IMPORT] Physics chassis from " + urdf.name + ", mass=" + urdf.totalMassKg() + "kg");
             if (differential == null) {
                 double[] wheelX = new double[4], wheelY = new double[4];
@@ -312,7 +323,9 @@ public class SimulatorApp extends SimpleApplication {
             orbit.setDragToRotate(true);
             setDisplayStatView(false);
         }
-        physicsWorld.buildGamePiece(new Vector3f(0.8f, 0.05f, 0));
+        physicsWorld.buildGamePiece(new Vector3f(0.8f, simConfig.flexibleIntake == null ? .05f : .034f, 0));
+        if (simConfig.flexibleIntake != null) physicsWorld.gamePieceBody().setPhysicsRotation(
+            new Quaternion().fromAngleAxis(FastMath.HALF_PI, Vector3f.UNIT_X));
 
         kinematics = new MecanumKinematics(trackWidthM, wheelBaseM, 2.0);
 
@@ -353,6 +366,7 @@ public class SimulatorApp extends SimpleApplication {
 
         if (importedScene != null) {
             importedScene.update();
+            physicsWorld.updateFlexibleVisuals(tpf);
         }
 
         MecanumKinematics.ChassisVelocity v;
@@ -389,8 +403,10 @@ public class SimulatorApp extends SimpleApplication {
             if (opModeSession.result.failure != null)
                 throw new RuntimeException("OpMode failed", opModeSession.result.failure);
             System.out.println("[SIM] OpMode finished. Final chassis position: " + physicsWorld.getChassisPosition()
-                + " yaw=" + yawRad + " gamePieceHeld=" + physicsWorld.isPieceHeld()
+                + " yaw=" + yawRad + (physicsWorld.flexibleIntake()==null ? " gamePieceHeld=" : " gamePieceContained=") + physicsWorld.isPieceHeld()
                 + " piece=" + physicsWorld.getGamePiecePosition() + " intake=" + intakePoint);
+            if (physicsWorld.flexibleIntake() != null) System.out.println("[FLEX] finalBendRad="+physicsWorld.flexibleIntake().maxDeflectionRad());
+            if (physicsWorld.tireDrive() != null) System.out.println("[TIRES] " + physicsWorld.tireDrive().states());
             if (articulated != null) System.out.println("[SIM] Final physical joints: " + articulated.jointPositions());
             opModeSession = null; // avoid repeated stop() calls across frames
             if (screenshot == null) stop();

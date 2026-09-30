@@ -36,6 +36,10 @@ import com.jme3.bullet.collision.shapes.EmptyShape;
 final class ImportedRobotScene {
     private static final Quaternion BASIS = new Quaternion().fromAngleAxis(-FastMath.HALF_PI, Vector3f.UNIT_X);
     final RobotUrdf urdf;
+    List<TireDrive.Wheel> driveWheels = List.of();
+    boolean tireContacts;
+    FlexibleIntakeConfig flexibleIntake;
+    final Map<String, List<Geometry>> visuals = new LinkedHashMap<>();
     private final Path urdfPath;
     final HardwareMap hardwareMap;
     private final AssetManager assets;
@@ -68,6 +72,7 @@ final class ImportedRobotScene {
         Node linkNode = new Node(linkName);
         parent.attachChild(linkNode);
         linkNodes.put(linkName, linkNode);
+        visuals.put(linkName, new ArrayList<>());
         for (RobotUrdf.Visual visual : link.visuals()) {
             Geometry geometry = new Geometry(linkName + "-visual", visualMesh(visual.geometry()));
             double[] rgba = visual.rgba();
@@ -85,6 +90,7 @@ final class ImportedRobotScene {
             geometry.setLocalTranslation(position(visual.origin().xyz()));
             geometry.setLocalRotation(rotation(visual.origin().rpy()).mult(shapeAxisRotation(visual.geometry())));
             linkNode.attachChild(geometry);
+            visuals.get(linkName).add(geometry);
         }
         for (RobotUrdf.Collision c : link.visuals().isEmpty() && link.massKg() > 0 ? link.collisions() : List.<RobotUrdf.Collision>of()) {
             Geometry geometry = new Geometry(linkName + "-collision", visualMesh(c.geometry()));
@@ -148,6 +154,7 @@ final class ImportedRobotScene {
     /** Weld fixed subtrees and keep wheel mass as ballast without wheel-ground traction. */
     List<Part> parts() throws Exception {
         root.updateGeometricState();
+        if (tireContacts) driveWheels = TireDrive.layout(this);
         owners.clear();
         wheelLinks.clear();
         assignParts(urdf.rootLink, urdf.rootLink, false);
@@ -165,8 +172,8 @@ final class ImportedRobotScene {
                 Vector3f center = inverse.mult(node.localToWorld(position(link.inertialOrigin().xyz()), null)
                     .subtract(origin.getTranslation()));
                 centers.put(link.name(), center);
-                weightedCom.addLocal(center.mult((float) link.massKg()));
-                mass += link.massKg();
+                weightedCom.addLocal(center.mult((float) rigidMass(link)));
+                mass += rigidMass(link);
             }
             if (mass <= 0) throw new IllegalArgumentException("Dynamic URDF subtree has no positive mass: " + name);
             Vector3f com = weightedCom.divide((float) mass);
@@ -179,8 +186,10 @@ final class ImportedRobotScene {
                 double[][] tensor = {{link.inertia().ixx(), link.inertia().ixz(), -link.inertia().ixy()},
                     {link.inertia().ixz(), link.inertia().izz(), -link.inertia().iyz()},
                     {-link.inertia().ixy(), -link.inertia().iyz(), link.inertia().iyy()}};
+                double fraction = rigidFraction(link.name());
+                for (double[] row : tensor) for (int i=0;i<3;i++) row[i] *= fraction;
                 aggregate.addRotated(tensor, inertialRotation);
-                aggregate.addParallelAxis(link.massKg(), centers.get(link.name()).subtract(com));
+                aggregate.addParallelAxis(rigidMass(link), centers.get(link.name()).subtract(com));
             }
             PrincipalInertia.Principal principal = aggregate.diagonalize(name);
             Quaternion principalInverse = principal.rotation().inverse();
@@ -204,6 +213,11 @@ final class ImportedRobotScene {
         }
         return result;
     }
+
+    private double rigidFraction(String name) {
+        return flexibleIntake != null && flexibleIntake.links().contains(name) ? 1-flexibleIntake.flexMassFraction() : 1;
+    }
+    private double rigidMass(RobotUrdf.Link link) { return link.massKg()*rigidFraction(link.name()); }
 
     private Mesh visualMesh(RobotUrdf.Geometry g) throws Exception {
         return switch (g.kind()) {
@@ -235,7 +249,11 @@ final class ImportedRobotScene {
             case "mesh" -> decompose(visualMesh(g));
             default -> throw new IllegalArgumentException("Unsupported geometry " + g.kind());
         };
-        if (shape.isConvex()) shape.setMargin(.002f);
+        if (shape.isConvex()) {
+            float margin=.002f;
+            if(g.kind().equals("box")) for(double dimension:g.dimensions()) margin=Math.min(margin,(float)dimension/8);
+            shape.setMargin(margin); // A thin intake ramp needs a skin smaller than its half thickness.
+        }
         return shape;
     }
 

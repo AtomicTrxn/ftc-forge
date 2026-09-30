@@ -23,7 +23,9 @@ class PreparationTest(unittest.TestCase):
             'rev_41_1354_default': [.188, -.1506, .0445], 'rev_41_1354_default_2': [-.188, -.1506, .0445],
             '5mm_x_400mm_hex_shaft__rev_41_1362_': [.192, -.14477, .18193],
             '5mm_x_400mm_hex_shaft__rev_41_1362__1': [.192, -.19875, .088445],
-            'flap': [.03, -.19875, .088445]}
+            'flap': [.03, -.19875, .088445],
+            **{'flap_'+str(i): [.03*i, -.19875, .088445] for i in range(1,6)},
+            'polycarbonate_sheet___2mm___8mm_grid_pattern___112_x_248_mm': [0, 0, 0]}
         names = ['root']+list(required)
         names += ['part_'+str(i) for i in range(614-len(names))]
         for name in names:
@@ -76,6 +78,26 @@ class PreparationTest(unittest.TestCase):
                     self.assertTrue(Path(mesh.get('filename')).is_file())
             with self.assertRaises(ValueError):
                 prep.prepare(source, output)
+
+    def test_contact_mode_explicit_mass_transfer_and_ramp_proxy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            source, _=self.fixture(root)
+            before=source.read_bytes()
+            output=prep.prepare(source,root/'contact',contact_models=True)
+            robot=ET.parse(output/'robot.urdf').getroot()
+            links={l.get('name'):l for l in robot.findall('link')}
+            self.assertEqual(before,source.read_bytes())
+            for name in ['flap']+['flap_'+str(i) for i in range(1,6)]:
+                self.assertEqual(.005,float(links[name].find('inertial/mass').get('value')))
+                self.assertAlmostEqual(.00005,float(links[name].find('inertial/inertia').get('ixx')))
+            self.assertAlmostEqual(60.83,sum(float(l.find('inertial/mass').get('value')) for l in links.values()))
+            ramp=links['polycarbonate_sheet___2mm___8mm_grid_pattern___112_x_248_mm']
+            self.assertEqual('.248 .112 .002',ramp.find('collision/geometry/box').get('size'))
+            import json
+            config=json.loads((output/'sim.config').read_text())
+            self.assertEqual(2,len(config['tires']['omni_joints']))
+            self.assertEqual(6,len(config['flexible_intake']['links']))
 
     def test_rejects_different_wheel_layout_and_entities(self):
         with tempfile.TemporaryDirectory() as directory:
