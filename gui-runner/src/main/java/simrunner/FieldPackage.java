@@ -14,6 +14,7 @@ final class FieldPackage {
     final Map<String,Map<String,Object>> meshes;
     final List<Map<String,Object>> instances, hives;
     final List<String> approximations;
+    final Map<String,Object> modelParameters;
     @SuppressWarnings("unchecked")
     FieldPackage(Path path) throws Exception {
         path=path.toAbsolutePath().normalize();
@@ -22,10 +23,10 @@ final class FieldPackage {
         directory=path.getParent().toRealPath();
         var data=MiniJson.parseObject(Files.readString(path));
         if(num(data,"version")!=1 || !"m".equals(data.get("units")))throw new IllegalArgumentException("Field package must be version 1 in meters");
-        name=str(data,"name");
+        name=str(data,"name");modelParameters=data.containsKey("model_parameters")?map(data.get("model_parameters")):Map.of();
         sourceUrdf=resolve(str(data,"urdf"));
         var half=vector(data.get("field_half_extents_m"),2);
-        if(half[0]<1.7||half[0]>1.9||half[1]<1.7||half[1]>1.9||Math.abs(num(data,"floor_top_m"))>1e-6)
+        if(half[0]<1.7||half[0]>1.9||half[1]<1.7||half[1]>1.9||(!modelParameters.isEmpty()?Math.abs(num(modelParameters,"floor_top_m"))>100:Math.abs(num(data,"floor_top_m"))>1e-6))
             throw new IllegalArgumentException("Field origin/dimensions require preparation in meters");
         halfExtents=new Vector3f((float)half[0],0,(float)half[1]);
         meshes=(Map<String,Map<String,Object>>)data.get("meshes");

@@ -58,7 +58,7 @@ final class ArticulatedRobot implements PhysicsTickListener {
                      Map<String, ServoModel.Spec> servoSpecs, Quaternion placement) throws Exception {
         this.scene = scene;
         this.servoSpecs = servoSpecs;
-        for (RobotUrdf.Transmission tx : scene.urdf.transmissions.values()) {
+        for (RobotUrdf.Transmission tx : scene.passiveConstruction ? List.<RobotUrdf.Transmission>of() : scene.urdf.transmissions.values()) {
             if (scene.isDriveWheel(scene.urdf.joints.get(tx.joint()))) continue;
             for (RobotUrdf.Actuator actuator : tx.actuators()) {
                 if (scene.hardwareMap.tryGet(Servo.class, actuator.name()) != null
@@ -99,13 +99,17 @@ final class ArticulatedRobot implements PhysicsTickListener {
             body.setInverseInertiaLocal(new Vector3f(1f / part.inertia().x,
                 1f / part.inertia().y, 1f / part.inertia().z));
             body.setEnableSleep(false);
+            if(scene.contactCompliance){body.setContactStiffness(scene.contactStiffness);body.setContactDamping(scene.contactDamping);}
+            Object material=scene.modelMaterials.get(part.name());
+            if(material==null) material=scene.owners.entrySet().stream().filter(e->e.getValue().equals(part.name())&&scene.modelMaterials.containsKey(e.getKey())).map(e->scene.modelMaterials.get(e.getKey())).findFirst().orElse(null);
+            if(material!=null){var m=FieldPackage.map(material);body.setFriction((float)FieldPackage.num(m,"friction"));body.setRestitution((float)FieldPackage.num(m,"restitution"));body.setRollingFriction((float)FieldPackage.num(m,"rolling_friction"));body.setSpinningFriction((float)FieldPackage.num(m,"spinning_friction"));}
             bodies.put(part.name(), new Body(part, body, bodyNode));
         }
         Body chassis = bodies.get(scene.urdf.rootLink);
         chassisNode = chassis.node();
         world.setRobotFrame(chassis.part().principalRotation().inverse(),
             chassis.part().principalRotation().inverse().mult(chassis.part().com().negate()));
-        world.constrainChassisLevel();
+        if(scene.lockChassisLevel)world.constrainChassisLevel();else world.chassisBody().setAngularFactor(1);
         float assemblyYawInertia = 0;
         Vector3f chassisCenter = world.getChassisPosition();
         for (Body body : bodies.values()) {
@@ -125,7 +129,7 @@ final class ArticulatedRobot implements PhysicsTickListener {
             // Nonadjacent links and siblings keep full collision response.
             parent.control().addToIgnoreList(child.control());
             Axis axis = new Axis(joint, parent, child, jointPivots.get(joint.name()), jointRotations.get(joint.name()), world.space());
-            for (RobotUrdf.Transmission tx : scene.urdf.transmissions.values()) {
+            for (RobotUrdf.Transmission tx : scene.passiveConstruction ? List.<RobotUrdf.Transmission>of() : scene.urdf.transmissions.values()) {
                 if (!tx.joint().equals(joint.name())) continue;
                 axis.actuators.addAll(tx.actuators());
                 for (RobotUrdf.Actuator actuator : tx.actuators()) {
@@ -257,7 +261,9 @@ final class ArticulatedRobot implements PhysicsTickListener {
             double q = samplePosition();
             Vector3f worldAxis = parent.control().getPhysicsRotation().mult(axisParent);
             double velocity = rate(worldAxis);
-            double effort = 0;
+            var passive=scene.passiveJoints.containsKey(joint.name())?FieldPackage.map(scene.passiveJoints.get(joint.name())):null;
+            boolean linear=joint.type().equals("prismatic");
+            double effort = passive==null?0:-FieldPackage.num(passive,linear?"joint_spring_n_per_m":"joint_spring_nm_per_rad")*(q-FieldPackage.num(passive,linear?"joint_rest_m":"joint_rest_rad"))-FieldPackage.num(passive,linear?"joint_damping_ns_per_m":"joint_damping_nm_s")*velocity;
             double damping = 0;
             for (RobotUrdf.Actuator actuator : actuators) {
                 SimDcMotorEx motor = scene.hardwareMap.tryGet(SimDcMotorEx.class, actuator.name());

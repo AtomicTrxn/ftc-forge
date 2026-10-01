@@ -6,9 +6,13 @@ import java.util.Map;
 
 public record FlexibleIntakeConfig(List<String> links, int segmentsPerArm, double flexMassFraction,
     double widthM, double armLengthM, double thicknessM, double stiffnessNmPerRad,
-    double dampingRatio, double maxBendRad, double friction, double contactStiffnessNPerM, double contactDampingNsPerM, Vector3f containmentMin, Vector3f containmentMax) {
+    double dampingRatio, double maxBendRad, double friction, double contactStiffnessNPerM, double contactDampingNsPerM, Vector3f containmentMin, Vector3f containmentMax, com.jme3.math.Quaternion meshToBeam, Map<String,Integer> visualIndices) {
+    public FlexibleIntakeConfig(List<String> links,int segmentsPerArm,double flexMassFraction,double widthM,double armLengthM,double thicknessM,double stiffnessNmPerRad,double dampingRatio,double maxBendRad,double friction,double contactStiffnessNPerM,double contactDampingNsPerM,Vector3f containmentMin,Vector3f containmentMax){this(links,segmentsPerArm,flexMassFraction,widthM,armLengthM,thicknessM,stiffnessNmPerRad,dampingRatio,maxBendRad,friction,contactStiffnessNPerM,contactDampingNsPerM,containmentMin,containmentMax,new com.jme3.math.Quaternion().fromAngleAxis(com.jme3.math.FastMath.HALF_PI,Vector3f.UNIT_Y),Map.of());}
+    @Override public com.jme3.math.Quaternion meshToBeam(){return meshToBeam.clone();}
     public FlexibleIntakeConfig {
         if(links==null)throw new IllegalArgumentException("flexible_intake requires links");
+        visualIndices=Map.copyOf(visualIndices);if(visualIndices.values().stream().anyMatch(i->i<0))throw new IllegalArgumentException("Flexible visual index must be nonnegative");
+        meshToBeam=meshToBeam.clone();
         links=List.copyOf(links);
         if(links.isEmpty()||links.stream().anyMatch(n->n==null||n.isBlank())||links.stream().distinct().count()!=links.size()
             ||segmentsPerArm<2||segmentsPerArm>6||!Double.isFinite(flexMassFraction)||flexMassFraction<=0||flexMassFraction>=1)
@@ -33,8 +37,9 @@ public record FlexibleIntakeConfig(List<String> links, int segmentsPerArm, doubl
         float z=low.z;low.z=high.z;high.z=z;
         return new FlexibleIntakeConfig((List<String>)v.get("links"),(int)segments,n(v,"flex_mass_fraction"),n(v,"width_m"),
             n(v,"arm_length_m"),n(v,"thickness_m"),n(v,"stiffness_nm_per_rad"),n(v,"damping_ratio"),n(v,"max_bend_rad"),
-            n(v,"friction"),n(v,"contact_stiffness_n_per_m"),n(v,"contact_damping_ns_per_m"),low,high);
+            n(v,"friction"),n(v,"contact_stiffness_n_per_m"),n(v,"contact_damping_ns_per_m"),low,high,v.containsKey("mesh_to_beam_rpy_rad")?ImportedRobotScene.rotation(FieldPackage.vector(v.get("mesh_to_beam_rpy_rad"),3)):new com.jme3.math.Quaternion().fromAngleAxis(com.jme3.math.FastMath.HALF_PI,Vector3f.UNIT_Y),indices(v));
     }
+    private static Map<String,Integer> indices(Map<String,Object> v){var out=new java.util.LinkedHashMap<String,Integer>();if(v.containsKey("visual_indices"))for(var e:FieldPackage.map(v.get("visual_indices")).entrySet()){if(!(e.getValue() instanceof Number n)||n.doubleValue()!=n.intValue())throw new IllegalArgumentException("Visual indices must be integers");out.put(e.getKey(),n.intValue());}return out;}
     private static double n(Map<String,Object> v,String k){return DifferentialDriveConfig.number(v,k);}
     private static Vector3f point(Map<String,Object> v,String k) {
         if(!(v.get(k) instanceof List<?> p)||p.size()!=3||p.stream().anyMatch(x->!(x instanceof Number)))

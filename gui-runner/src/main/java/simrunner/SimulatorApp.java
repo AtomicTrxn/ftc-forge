@@ -81,6 +81,7 @@ public class SimulatorApp extends SimpleApplication {
     private String fieldOverride,modeOverride,pieceSetOverride;
     private boolean previewOnly;
     private ImportedFieldScene fieldScene;
+    private ModelFieldScene modelFieldScene;
     private com.jme3.font.BitmapText fieldStatus;
     private double renderSeconds;private int renderFrames;
     private int previewFrames;
@@ -139,8 +140,12 @@ public class SimulatorApp extends SimpleApplication {
             if(modeOverride!=null)f=f.withMode(modeOverride);
             simConfig.field=f.validated();
             if(f.source().equals("imported")) {
-                var field=new FieldPackage(projectDir.resolve(f.packagePath()));
-                fieldScene=new ImportedFieldScene(field,f,physicsWorld,rootNode,assetManager);
+                Path fieldPath=projectDir.resolve(f.packagePath());
+                if(fieldPath.getFileName().toString().equals("profile.json")) {
+                    var profile=new ModelProfile(fieldPath,true);if(!profile.kind.equals("field"))throw new IllegalArgumentException("Select a field profile");
+                    if(profile.legacyField())fieldScene=new ImportedFieldScene(new FieldPackage(profile.artifact("field")),f,physicsWorld,rootNode,assetManager);
+                    else modelFieldScene=new ModelFieldScene(profile,f.hasPieces(),physicsWorld,rootNode,assetManager,simConfig.scenePieces);
+                } else fieldScene=new ImportedFieldScene(new FieldPackage(fieldPath),f,physicsWorld,rootNode,assetManager);
                 if(simConfig.robotStart==null)simConfig.robotStart=new Vector3f(-1.2f,(float)simConfig.startHeightM,1.2f);
             } else {
                 buildField();physicsWorld.buildFieldBoundary();
@@ -158,10 +163,10 @@ public class SimulatorApp extends SimpleApplication {
             inputManager.addListener((ActionListener)(name,pressed,tpf)->{if(pressed){if(name.equals("CollisionOverlay"))collisionOverlay.setVisible(!collisionOverlay.visible);else {cadVisible=!cadVisible;setCadVisible(cadVisible);}}},"CollisionOverlay","CollisionCad");
             if(collisionOnly){cadVisible=false;setCadVisible(false);}
             timer.reset();
-            fieldStatus=new com.jme3.font.BitmapText(guiFont);fieldStatus.setText((fieldScene==null?"Generic field":fieldScene.field.name)+" | "+f.mode()+" | "+physicsWorld.gamePieces().size()+" pieces\nMeters at scale 1 | drag: orbit | scroll: zoom | R: reset field"+(previewOnly?" | preview":""));
+            fieldStatus=new com.jme3.font.BitmapText(guiFont);fieldStatus.setText((modelFieldScene!=null?modelFieldScene.profile.name:fieldScene==null?"Generic field":fieldScene.field.name)+" | "+f.mode()+" | "+physicsWorld.gamePieces().size()+" pieces\nMeters at scale 1 | drag: orbit | scroll: zoom | R: reset field"+(previewOnly?" | preview":""));
             fieldStatus.setLocalTranslation(15,cam.getHeight()-15,0);guiNode.attachChild(fieldStatus);setDisplayStatView(false);
             fieldStatus.setText(fieldStatus.getText()+"\nC: collision overlay (cyan: dynamic, orange: static) | V: CAD visibility"+(collisionReview?" | coverage is not accuracy certification":""));
-            inputManager.addMapping("ResetField",new KeyTrigger(KeyInput.KEY_R));inputManager.addListener((ActionListener)(name,pressed,tpf)->{if(pressed){if(fieldScene!=null)fieldScene.reset();else physicsWorld.resetPieces();}},"ResetField");
+            inputManager.addMapping("ResetField",new KeyTrigger(KeyInput.KEY_R));inputManager.addListener((ActionListener)(name,pressed,tpf)->{if(pressed){if(fieldScene!=null)fieldScene.reset();else if(modelFieldScene!=null){modelFieldScene.reset();physicsWorld.resetPieces();}else physicsWorld.resetPieces();}},"ResetField");
             if (screenshotPath != null) {
                 java.nio.file.Files.createDirectories(screenshotPath.getParent());
                 String name = screenshotPath.getFileName().toString();
@@ -314,6 +319,7 @@ public class SimulatorApp extends SimpleApplication {
             urdf.validateHardwareMap(hardwareMap);
             importedScene = new ImportedRobotScene(urdf, urdfPath, hardwareMap, assetManager, simConfig.vhacdMaxHulls, java.util.Set.of(motorNames),simConfig.field.fullDetail()?0:.0005f);
             System.out.println("[ROBOT VISUAL] unique triangles "+importedScene.sourceVisualTriangles+" -> "+importedScene.preparedVisualTriangles+"; grid="+(simConfig.field.fullDetail()?0:.0005)+"m, vertex movement <=0.4331mm; collision and inertia use original CAD.");
+            if(simConfig.robotProfile!=null)simConfig.robotProfile.configure(importedScene);
             importedScene.tireContacts = simConfig.tires != null;
             importedScene.flexibleIntake = simConfig.flexibleIntake;
             importedScene.collisionOmissions=simConfig.collisionOmissions;
@@ -396,6 +402,7 @@ public class SimulatorApp extends SimpleApplication {
             physicsWorld.rememberPieceStart("practice-torus");
         }
 
+        if(simConfig.field.hasPieces()){if(fieldScene!=null)SceneProfile.legacyPieces(simConfig.scenePieces,fieldScene,physicsWorld);if(modelFieldScene==null)SceneProfile.placePieces(simConfig.scenePieces,physicsWorld);}
         kinematics = new MecanumKinematics(trackWidthM, wheelBaseM, 2.0);
         validateInitialContacts();
 
@@ -497,14 +504,14 @@ public class SimulatorApp extends SimpleApplication {
     }
 
     private void validateStart(Vector3f start) {
-        var half=fieldScene==null?new Vector3f(1.8288f,0,1.8288f):fieldScene.field.halfExtents;
+        var half=modelFieldScene!=null?modelFieldScene.halfExtents:fieldScene==null?new Vector3f(1.8288f,0,1.8288f):fieldScene.field.halfExtents;
         float minX=-.2286f,maxX=.2286f,minZ=-.2286f,maxZ=.2286f,minY=-.1f;
         if(importedScene!=null){importedScene.root.updateGeometricState();if(importedScene.root.getWorldBound() instanceof com.jme3.bounding.BoundingBox box) {
             minX=Float.POSITIVE_INFINITY;maxX=Float.NEGATIVE_INFINITY;minZ=Float.POSITIVE_INFINITY;maxZ=Float.NEGATIVE_INFINITY;minY=box.getCenter().y-box.getYExtent();
             var yaw=new Quaternion().fromAngleAxis(simConfig.robotYawRad,Vector3f.UNIT_Y);
             for(float x:new float[]{box.getCenter().x-box.getXExtent(),box.getCenter().x+box.getXExtent()})for(float z:new float[]{box.getCenter().z-box.getZExtent(),box.getCenter().z+box.getZExtent()}){var p=yaw.mult(new Vector3f(x,0,z));minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minZ=Math.min(minZ,p.z);maxZ=Math.max(maxZ,p.z);}
         }}
-        if(!Float.isFinite(start.x)||!Float.isFinite(start.y)||!Float.isFinite(start.z)||start.x+minX<-half.x||start.x+maxX>half.x||start.z+minZ<-half.z||start.z+maxZ>half.z||start.y+minY<-.004f)
+        if(!Float.isFinite(start.x)||!Float.isFinite(start.y)||!Float.isFinite(start.z)||start.x+minX<-half.x||start.x+maxX>half.x||start.z+minZ<-half.z||start.z+maxZ>half.z||start.y+minY<(modelFieldScene!=null?(float)FieldPackage.num(modelFieldScene.profile.parameters,"floor_top_m"):fieldScene!=null&&fieldScene.field.modelParameters.containsKey("floor_top_m")?(float)FieldPackage.num(fieldScene.field.modelParameters,"floor_top_m"):0)-.004f)
             throw new IllegalArgumentException("Robot start footprint must be inside the selected field");
         if(fieldScene!=null && start.x+maxX>-.65f && start.x+minX<.65f && start.z+maxZ>-.5f && start.z+minZ<.5f)throw new IllegalArgumentException("Robot start overlaps the HIVE/frame envelope; choose robot_start_xyz_m outside it");
     }
@@ -516,7 +523,14 @@ public class SimulatorApp extends SimpleApplication {
     private void validateInitialContacts() {
         var environment=new java.util.HashSet<Long>();
         if(fieldScene!=null){for(var body:fieldScene.fixed)environment.add(body.nativeId());for(var hive:fieldScene.hives)environment.add(hive.body().nativeId());}
+        if(modelFieldScene!=null)for(var body:modelFieldScene.bodies)environment.add(body.nativeId());
         for(var piece:physicsWorld.gamePieces())environment.add(piece.body().nativeId());
+        var half=modelFieldScene!=null?modelFieldScene.halfExtents:fieldScene!=null?fieldScene.field.halfExtents:new Vector3f(1.8288f,0,1.8288f);
+        for(var piece:physicsWorld.gamePieces()) {
+            var p=piece.body().getPhysicsLocation();
+            if(p.y<0||Math.abs(p.x)>half.x||Math.abs(p.z)>half.z)throw new IllegalArgumentException("Game piece starts outside the selected field; edit the saved scene: "+piece.id());
+            physicsWorld.space().contactTest(piece.body(),event->{if(event.getDistance1()<-.004f)throw new IllegalArgumentException("Game-piece start penetrates an obstacle or another piece; edit the saved scene: "+piece.id());});
+        }
         for(var body:physicsWorld.space().getRigidBodyList())if(body.isDynamic()&&!environment.contains(body.nativeId())) {
             physicsWorld.space().contactTest(body,event->{
                 long other=event.getObjectA().nativeId()==body.nativeId()?event.getObjectB().nativeId():event.getObjectA().nativeId();

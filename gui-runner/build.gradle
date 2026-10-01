@@ -134,3 +134,30 @@ tasks.register('verifyTorusRetention', JavaExec) {
     jvmArgs = ['-Djava.awt.headless=true']
     maxHeapSize = '2g'
 }
+
+tasks.register('prepareModels', JavaExec) {
+    group = 'application'
+    description = 'Import, edit, review, and save reusable robot/field profiles and scenes.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'simrunner.ModelPreparationEditor'
+    workingDir = rootProject.projectDir
+}
+
+tasks.register('validateModel', JavaExec) {
+    group = 'verification'
+    description = 'Validate a draft model using the native shapes used in its preview and runtime.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'simrunner.ModelValidation'
+    workingDir = rootProject.projectDir
+    jvmArgs = ['-Djava.awt.headless=true']
+    maxHeapSize = '2g'
+}
+
+tasks.register('previewModel', JavaExec) {
+    group = 'application'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'simrunner.ModelPreparationPreview'
+    workingDir = rootProject.projectDir
+    jvmArgs = ['-XstartOnFirstThread', '-Djava.awt.headless=true']
+    maxHeapSize = '2g'
+}

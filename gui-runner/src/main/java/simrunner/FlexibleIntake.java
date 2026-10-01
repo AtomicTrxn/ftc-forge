@@ -24,16 +24,19 @@ final class FlexibleIntake {
             Geometry visual=null;
             for(int i=0;i<link.visuals().size();i++) {
                 var g=link.visuals().get(i).geometry();
-                if(g.kind().equals("mesh") && java.nio.file.Path.of(g.meshFile()).getFileName().toString().equalsIgnoreCase("Flap.stl")) {
-                    if(visual!=null)throw new IllegalArgumentException("Ambiguous rubber flap visual: "+name);
+                Integer chosen=config.visualIndices().get(name);
+                boolean named=java.nio.file.Path.of(g.meshFile()==null?"":g.meshFile()).getFileName().toString().equalsIgnoreCase("Flap.stl");
+                boolean sole=link.visuals().stream().filter(v->v.geometry().kind().equals("mesh")).count()==1;
+                if(g.kind().equals("mesh")&&(chosen!=null?chosen==i:named||sole)) {
+                    if(visual!=null)throw new IllegalArgumentException("Ambiguous rubber visual; choose flexible_intake.visual_indices: "+name);
                     visual=scene.visuals.get(name).get(i);
                 }
             }
-            if(visual==null)throw new IllegalArgumentException("Flexible link requires a Flap.stl visual: "+name);
+            if(visual==null)throw new IllegalArgumentException("Select a flexible_intake.visual_indices mesh for link: "+name);
             Transform frame=visual.getLocalTransform().clone().combineWithParent(robot.linkFrameWorld(name));
             // The export's Flap.stl X axis is across the shaft; Z is radial. Map its
             // jME X(width), Y(radial), Z(tangent) into our beam Z(width), Y(radial), X(thickness).
-            Quaternion beamToMesh=new Quaternion().fromAngleAxis(FastMath.HALF_PI,Vector3f.UNIT_Y);
+            Quaternion beamToMesh=config.meshToBeam();
             frame.setRotation(frame.getRotation().mult(beamToMesh));
             var joint=scene.urdf.joints.values().stream().filter(j->j.child().equals(owner)).findFirst().orElseThrow();
             Vector3f axle=robot.linkFrameWorld(joint.parent()).getRotation().mult(ImportedRobotScene.rotation(joint.origin().rpy()))

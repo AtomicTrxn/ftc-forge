@@ -1,5 +1,7 @@
 # Field CAD import and modes
 
+For new CAD, use the [shared preparation editor](MODEL_PREPARATION.md). It saves reviewed reusable model profiles and separate scene layouts. The commands below remain the compatibility workflow for the previously validated BIOBUZZ package.
+
 The field is selected independently of the robot hardware/model. With no `field` configuration, FTC Forge opens the generic 3.6576 m practice field with **no game pieces**.
 
 ## Desktop selection

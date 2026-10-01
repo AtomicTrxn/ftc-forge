@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 
 /**
@@ -22,6 +23,8 @@ public class SimConfig {
     public String presetMotors;
     public String urdf;
     public String calibration;
+    ModelProfile robotProfile;
+    public Map<String,Object> scenePieces=Map.of();
     public DifferentialDriveConfig drive;
     public MotorIntakeConfig intake;
     public TireDriveConfig tires;
@@ -43,7 +46,22 @@ public class SimConfig {
     public static SimConfig load(Path projectRoot) throws IOException {
         Path configPath = projectRoot.resolve("sim.config");
         Map<String, Object> root = MiniJson.parseObject(Files.readString(configPath));
+        try {if(root.get("scene_profile") instanceof String scene)root=SceneProfile.apply(projectRoot.resolve(scene).toRealPath(),root);}catch(Exception e){throw new IOException("Scene profile: "+e.getMessage(),e);}
+        ModelProfile model=null;
+        if(root.get("robot_model_profile") instanceof String ref)try {
+            model=new ModelProfile(projectRoot.resolve(ref),true);
+            if(!model.kind.equals("robot"))throw new IllegalArgumentException("Select a robot profile");
+            var conflicts=new ArrayList<String>();for(String key:model.runtime.keySet())if(root.containsKey(key))conflicts.add(key);
+            if(!conflicts.isEmpty() && !Set.of("profile","project").contains(root.get("model_settings")))throw new IllegalArgumentException("Choose model_settings: profile or project for overlapping settings: "+conflicts);
+            if("project".equals(root.get("model_settings"))&&root.containsKey("vhacd_max_hulls")&&!root.get("vhacd_max_hulls").equals(model.runtime.get("vhacd_max_hulls")))throw new IllegalArgumentException("Decomposition changes require review; edit max_hulls in the model profile before using project hull settings");
+            boolean projectCalibration="project".equals(root.get("model_settings"))&&root.containsKey("calibration");
+            for(var e:model.runtime.entrySet())if(!"project".equals(root.get("model_settings"))||!root.containsKey(e.getKey()))root.put(e.getKey(),e.getValue());
+            root.put("urdf",model.artifact("robot").toString());
+            if(model.runtime.containsKey("calibration")&&!projectCalibration)root.put("calibration",model.resolve(model.runtime.get("calibration").toString()).toString());
+        }catch(Exception e){throw new IOException("Robot model profile: "+e.getMessage(),e);}
         SimConfig config = new SimConfig();
+        config.robotProfile=model;
+        if(root.containsKey("scene_pieces"))config.scenePieces=FieldPackage.map(root.get("scene_pieces"));
         if (root.containsKey("sourceRoot")) config.sourceRoot = (String) root.get("sourceRoot");
         if (root.containsKey("robotConfig")) config.robotConfig = (String) root.get("robotConfig");
         if (root.containsKey("presetMotors")) config.presetMotors = (String) root.get("presetMotors");
@@ -61,7 +79,9 @@ public class SimConfig {
         if (root.containsKey("robot_start_xyz_m")) config.robotStart=FieldPackage.pos(root.get("robot_start_xyz_m"));
         if (root.containsKey("robot_start_yaw_rad")) config.robotYawRad=(float)FieldPackage.num(root,"robot_start_yaw_rad");
         if(!Float.isFinite(config.robotYawRad))throw new IllegalArgumentException("Robot yaw must be finite");
-        if(config.robotStart!=null && config.robotStart.y<0)throw new IllegalArgumentException("Robot start must be above the field surface");
+        float floorTop=0;
+        if(config.field.source().equals("imported")&&Path.of(config.field.packagePath()).getFileName().toString().equals("profile.json"))try{var fieldModel=new ModelProfile(projectRoot.resolve(config.field.packagePath()),true);if(!fieldModel.kind.equals("field"))throw new IllegalArgumentException("Select a field profile");floorTop=(float)FieldPackage.num(fieldModel.parameters,"floor_top_m");}catch(Exception e){throw new IOException("Field model profile: "+e.getMessage(),e);}
+        if(config.robotStart!=null && config.robotStart.y<floorTop)throw new IllegalArgumentException("Robot start must be above the field surface");
         if (root.containsKey("calibration")) config.calibration = (String) root.get("calibration");
         if (root.containsKey("total_mass_kg")) config.totalMassKg = ((Number) root.get("total_mass_kg")).doubleValue();
         if (root.containsKey("vhacd_max_hulls")) config.vhacdMaxHulls = ((Number) root.get("vhacd_max_hulls")).intValue();
