@@ -85,6 +85,38 @@ class RevDuoPhysicsTest {
             assertFalse(capture.active(map));
         }finally{space.destroy();}
     }
+    @Test void elasticMotorWithReflectedInertiaLoadsReversesAndDistinguishesBrakeFromFloat() throws Exception {
+        Path file=temp.resolve("elastic.urdf");
+        Files.writeString(file,"<robot name='elastic'>"+link("base",".3 .2 .2",3)+link("upper",".05 .2 .05",.1)
+            +link("lower",".05 .2 .05",.1)+joint("upperJoint","upper",".3 0 .2","")
+            +joint("lowerJoint","lower",".3 0 .1","<mimic joint='upperJoint' multiplier='1'/>")+tx("upperJoint","intake")+"</robot>");
+        HardwareMap map=new HardwareMap();var intake=motor("intake");map.register("intake",intake);intake.configureFriction(0,0);
+        PhysicsSpace space=new PhysicsSpace(PhysicsSpace.BroadphaseType.DBVT);
+        try {
+            space.setGravity(Vector3f.ZERO);
+            var scene=new ImportedRobotScene(RobotUrdf.parse(file),file,map,new DesktopAssetManager(true),8);
+            scene.flexibleIntake=ContactModelsTest.flexSpec();
+            var world=new PhysicsWorld(null,new Node(),space);
+            var robot=new ArticulatedRobot(scene,world,new Node(),Vector3f.ZERO);
+            robot.addReflectedShaftInertia("intake",.0015);world.chassisBody().setMass(0);
+            intake.setPower(.5);elasticTicks(space,intake,4);
+            double free=intake.getOmegaRadS(),freeCurrent=intake.getCurrent(org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit.AMPS);
+            robot.setShaftLoad("intake",.3);elasticTicks(space,intake,4);
+            double loaded=intake.getOmegaRadS(),loadedCurrent=intake.getCurrent(org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit.AMPS);
+            assertEquals(15,free,1);assertTrue(loaded<free-3);assertTrue(loadedCurrent>freeCurrent+.5);
+            robot.setShaftLoad("intake",0);intake.setPower(-.5);elasticTicks(space,intake,4);
+            assertTrue(intake.getOmegaRadS()<-10);assertEquals(robot.jointPosition("upperJoint"),robot.jointPosition("lowerJoint"),.001);
+            intake.setPower(0);intake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+            double spinning=intake.getOmegaRadS();elasticTicks(space,intake,1);
+            assertEquals(spinning,intake.getOmegaRadS(),.1,"FLOAT must preserve unloaded coasting");
+            intake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);elasticTicks(space,intake,6);
+            assertTrue(Math.abs(intake.getOmegaRadS())<.1,"BRAKE must electrically damp the shaft");
+        }finally{space.destroy();}
+    }
+    private static void elasticTicks(PhysicsSpace space,SimDcMotorEx motor,double seconds) {
+        float dt=1f/480;
+        for(int i=0;i<Math.round(seconds/dt);i++){motor.integrate(12,dt,Math.round(i*dt*1000));space.update(dt,0);}
+    }
     @Test void captureReleaseMovesThePhysicsBodyToTheHeldPosition() {
         PhysicsSpace space=new PhysicsSpace(PhysicsSpace.BroadphaseType.DBVT);
         try {

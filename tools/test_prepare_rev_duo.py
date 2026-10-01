@@ -99,6 +99,22 @@ class PreparationTest(unittest.TestCase):
             self.assertEqual(2,len(config['tires']['omni_joints']))
             self.assertEqual(6,len(config['flexible_intake']['links']))
 
+    def test_retention_is_explicit_and_implies_contact_models(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);source,_=self.fixture(root);before=source.read_bytes()
+            legacy=prep.prepare(source,root/'legacy')
+            self.assertNotIn('torus_retention',json.loads((legacy/'sim.config').read_text()))
+            output=prep.prepare(source,root/'retention',torus_retention=True)
+            config=json.loads((output/'sim.config').read_text())
+            self.assertIn('tires',config);self.assertIn('flexible_intake',config)
+            self.assertEqual([.23,0,.145],config['torus_retention']['seat_xyz_m'])
+            self.assertEqual(100,config['torus_retention']['contact_stiffness_n_per_m'])
+            self.assertEqual(before,source.read_bytes())
+            self.assertTrue((output/'TeamCode/src/main/java/org/firstinspires/ftc/teamcode/RevDuoRetentionAuto.java').is_file())
+            report=json.loads((output/'preparation-report.json').read_text())
+            self.assertIn('unmeasured compliant pinch',report['limits'][-1])
+
     def test_rejects_different_wheel_layout_and_entities(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

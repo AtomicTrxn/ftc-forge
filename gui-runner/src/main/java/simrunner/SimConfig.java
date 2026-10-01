@@ -26,6 +26,8 @@ public class SimConfig {
     public MotorIntakeConfig intake;
     public TireDriveConfig tires;
     public FlexibleIntakeConfig flexibleIntake;
+    public TorusRetentionConfig torusRetention;
+    public com.jme3.math.Vector3f gamePieceStart;
     public double startHeightM = .1;
     public Double totalMassKg;
     public int vhacdMaxHulls = 8;
@@ -74,6 +76,23 @@ public class SimConfig {
         if (root.containsKey("flexible_intake")) {
             config.flexibleIntake = FlexibleIntakeConfig.parse((Map<String,Object>)root.get("flexible_intake"));
             if (config.urdf == null || config.intake == null) throw new IllegalArgumentException("flexible_intake requires URDF and motor intake");
+        }
+        if (root.containsKey("torus_retention")) {
+            config.torusRetention=TorusRetentionConfig.parse((Map<String,Object>)root.get("torus_retention"));
+            if(config.flexibleIntake==null) throw new IllegalArgumentException("torus_retention requires flexible_intake");
+            var seat=config.torusRetention.seat();var min=config.flexibleIntake.containmentMin();var max=config.flexibleIntake.containmentMax();
+            for(int i=0;i<3;i++) if(seat.get(i)<min.get(i)||seat.get(i)>max.get(i))
+                throw new IllegalArgumentException("Retention seat must be inside containment bounds");
+            if(config.torusRetention.exit().x<=max.x) throw new IllegalArgumentException("Retention exit must be ahead of containment bounds");
+        }
+        if(root.containsKey("game_piece_start_xyz_m")) {
+            Object value=root.get("game_piece_start_xyz_m");
+            if(!(value instanceof List<?> xyz)||xyz.size()!=3||xyz.stream().anyMatch(x->!(x instanceof Number)))
+                throw new IllegalArgumentException("game_piece_start_xyz_m requires three coordinates");
+            config.gamePieceStart=ImportedRobotScene.position(xyz.stream().mapToDouble(x->((Number)x).doubleValue()).toArray());
+            var p=config.gamePieceStart;
+            if(!Float.isFinite(p.x)||!Float.isFinite(p.y)||!Float.isFinite(p.z)||p.y<0||Math.abs(p.x)>1.8||Math.abs(p.z)>1.8)
+                throw new IllegalArgumentException("Game-piece start must be finite and inside the field above the floor");
         }
         if (root.containsKey("start_height_m")) config.startHeightM = ((Number) root.get("start_height_m")).doubleValue();
         if (!Double.isFinite(config.startHeightM) || config.startHeightM < 0)

@@ -27,6 +27,22 @@ final class ArticulatedRobot implements PhysicsTickListener {
     private final Map<String, ServoModel.Spec> servoSpecs;
     private final Map<String, Body> bodies = new LinkedHashMap<>();
     private final Map<String, Double> attachedInertia = new LinkedHashMap<>();
+    private final Map<String, Double> shaftLoads = new LinkedHashMap<>();
+    void setShaftLoad(String motor, double torqueNm) { shaftLoads.put(motor, torqueNm); }
+    void addReflectedShaftInertia(String motorName,double moment) {
+        Axis axis=axes.stream().filter(a->a.actuators.stream().anyMatch(t->t.name().equals(motorName))).findFirst().orElseThrow();
+        double reduction=axis.actuators.stream().filter(a->a.name().equals(motorName)).findFirst().orElseThrow().mechanicalReduction();
+        moment*=reduction*reduction;
+        Vector3f inverse=axis.child.control().getInverseInertiaLocal(null);
+        Vector3f a=axis.axisChild;
+        // Diagonal projection in the CAD principal frame. REV shaft axes align with its
+        // principal axis; reject arbitrary off-axis configurations rather than lose products.
+        if(Math.max(Math.abs(a.x),Math.max(Math.abs(a.y),Math.abs(a.z)))<.999f)
+            throw new IllegalArgumentException("Reflected shaft inertia requires a principal-axis-aligned rotor");
+        axis.child.control().setInverseInertiaLocal(new Vector3f((float)(1/(1/inverse.x+moment*a.x*a.x)),
+            (float)(1/(1/inverse.y+moment*a.y*a.y)),(float)(1/(1/inverse.z+moment*a.z*a.z))));
+        addAttachedInertia(axis.child.part().name(),moment);
+    }
     private final List<Axis> axes = new ArrayList<>();
     final Node chassisNode;
 
@@ -157,6 +173,8 @@ final class ArticulatedRobot implements PhysicsTickListener {
         final Quaternion initialRelative;
         final List<RobotUrdf.Actuator> actuators = new ArrayList<>();
         double position, previousWrapped;
+        New6Dof hinge;
+        float motorAngleSign=1;
 
         Axis(RobotUrdf.Joint joint, Body parent, Body child, Vector3f pivot, Quaternion rotation, PhysicsSpace space) {
             this.joint = joint;
@@ -181,7 +199,7 @@ final class ArticulatedRobot implements PhysicsTickListener {
                 space.add(slider);
             } else {
                 Quaternion frameWorld = new Quaternion().fromRotationMatrix(frameForX(worldAxis));
-                New6Dof hinge = new New6Dof(parent.control(), child.control(), pivotParent, pivotChild,
+                hinge = new New6Dof(parent.control(), child.control(), pivotParent, pivotChild,
                     inverseParent.mult(frameWorld).toRotationMatrix(), inverseChild.mult(frameWorld).toRotationMatrix(), RotationOrder.XYZ);
                 for (int dof = 0; dof < 6; dof++) {
                     hinge.set(MotorParam.LowerLimit, dof, 0);
@@ -200,6 +218,10 @@ final class ArticulatedRobot implements PhysicsTickListener {
                     hinge.set(MotorParam.LowerLimit, 3, 1);
                     hinge.set(MotorParam.UpperLimit, 3, -1); // lower > upper means free continuous rotation
                 }
+                Quaternion original = child.control().getPhysicsRotation();
+                child.control().setPhysicsRotation(original.mult(new Quaternion().fromAngleAxis(.01f, axisChild)));
+                motorAngleSign = Math.signum(hinge.getAngles(null).x);
+                child.control().setPhysicsRotation(original);
                 space.add(hinge);
             }
         }
@@ -241,7 +263,7 @@ final class ArticulatedRobot implements PhysicsTickListener {
                 double reduction = actuator.mechanicalReduction();
                 if (motor != null) {
                     motor.syncExternalShaft(q * reduction, velocity * reduction);
-                    effort += motor.externalShaftTorque() * reduction;
+                    effort += (motor.externalShaftTorque() - shaftLoads.getOrDefault(actuator.name(),0d)) * reduction;
                     damping += motor.externalTorqueDamping() * reduction * reduction;
                 } else {
                     Servo servo = scene.hardwareMap.get(Servo.class, actuator.name());
@@ -267,7 +289,18 @@ final class ArticulatedRobot implements PhysicsTickListener {
             // Implicit back-EMF integration prevents high reductions from oscillating each step.
             if (joint.effort() != null) effort = Math.max(-joint.effort(), Math.min(joint.effort(), effort));
             effort /= 1 + dt * damping * inverseEffective;
-            double cap = (joint.type().equals("prismatic") ? 50 : (attachedInertia.isEmpty() ? 100 : 1000)) / inverseEffective;
+            boolean elasticAxis = hinge != null && scene.flexibleIntake != null &&
+                (attachedInertia.containsKey(child.part().name()) || axes.stream().anyMatch(a -> joint.name().equals(a.joint.mimic()) && attachedInertia.containsKey(a.child.part().name())));
+            if (elasticAxis && !actuators.isEmpty()) {
+                // Solve motor effort together with flap/contact constraints. Applying a torque
+                // impulse to the tiny rigid core before solving contacts required an artificial
+                // acceleration cap. The native motor instead bounds torque in the solve.
+                hinge.getRotationMotor(0).setMotorEnabled(true);
+                hinge.set(MotorParam.TargetVelocity, 3, (float)((velocity+effort*dt*inverseEffective)*motorAngleSign));
+                hinge.set(MotorParam.MaxMotorForce, 3, (float)Math.abs(effort));
+                return;
+            }
+            double cap = (joint.type().equals("prismatic") ? 50 : 100) / inverseEffective;
             effort = Math.max(-cap, Math.min(cap, effort));
             Vector3f impulse = worldAxis.mult((float) (effort * dt));
             if (joint.type().equals("prismatic")) {

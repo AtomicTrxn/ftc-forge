@@ -85,3 +85,13 @@ tasks.register('verifyRobotPhysics', JavaExec) {
     jvmArgs = ['-Djava.awt.headless=true']
     maxHeapSize = '2g'
 }
+
+tasks.register('verifyTorusRetention', JavaExec) {
+    group = 'verification'
+    description = 'Validates contact-triggered compliant torus capture, carrying and reverse release.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'simrunner.TorusRetentionProbe'
+    workingDir = rootProject.projectDir
+    jvmArgs = ['-Djava.awt.headless=true']
+    maxHeapSize = '2g'
+}
