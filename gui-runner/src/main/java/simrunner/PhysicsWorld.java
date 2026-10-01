@@ -43,6 +43,26 @@ public class PhysicsWorld {
     private RigidBodyControl chassisControl;
     private RigidBodyControl gamePieceControl;
     private Node gamePieceNode;
+    record GamePiece(String id, String type, Node node, RigidBodyControl body,
+                     Vector3f initialPosition, com.jme3.math.Quaternion initialRotation) { }
+    private final java.util.ArrayList<GamePiece> gamePieces = new java.util.ArrayList<>();
+    List<GamePiece> gamePieces() { return List.copyOf(gamePieces); }
+    void registerPiece(String id, String type, Node node, RigidBodyControl body) {
+        if(gamePieces.stream().anyMatch(p->p.id().equals(id)))throw new IllegalArgumentException("Duplicate game piece: "+id);
+        gamePieces.add(new GamePiece(id,type,node,body,body.getPhysicsLocation(),body.getPhysicsRotation()));
+    }
+    void rememberPieceStart(String id) {
+        for(int i=0;i<gamePieces.size();i++){var p=gamePieces.get(i);if(p.id().equals(id))gamePieces.set(i,new GamePiece(p.id(),p.type(),p.node(),p.body(),p.body().getPhysicsLocation(),p.body().getPhysicsRotation()));}
+    }
+    void resetPieces() {
+        for(var p:gamePieces) {
+            if(!physicsSpace.contains(p.body()))physicsSpace.add(p.body());
+            p.body().clearForces();p.body().setPhysicsLocation(p.initialPosition());p.body().setPhysicsRotation(p.initialRotation());
+            p.body().setLinearVelocity(Vector3f.ZERO);p.body().setAngularVelocity(Vector3f.ZERO);p.body().activate();
+        }
+        pieceHeld=false;
+        if(flexibleIntake!=null && flexibleIntake.retention!=null)flexibleIntake.retention.reset();
+    }
     private boolean pieceHeld = false;
     private physics.MecanumKinematics.ChassisVelocity driveTarget =
         new physics.MecanumKinematics.ChassisVelocity(0, 0, 0);
@@ -115,6 +135,7 @@ public class PhysicsWorld {
         gamePieceNode.addControl(gamePieceControl);
         gamePieceControl.setPhysicsLocation(position);
         physicsSpace.add(gamePieceControl);
+        registerPiece("practice-torus","torus",gamePieceNode,gamePieceControl);
     }
 
     /** Real V-HACD decomposition (Vhacd4, bundled in Minie/Libbulletjme per R2) -- not a bounding-box or single-hull approximation. */
@@ -258,11 +279,11 @@ public class PhysicsWorld {
      * visually; deactivating releases it back into free physics at its held position.
      */
     public void updateIntake(boolean intakeActive, Vector3f intakePointWorld, float captureRadiusM) {
-        if (gamePieceControl == null) return;
         if (flexibleIntake != null) {
-            pieceHeld = flexibleIntake.contains(gamePieceControl.getPhysicsLocation());
+            pieceHeld = gamePieces.stream().anyMatch(p->flexibleIntake.contains(p.body().getPhysicsLocation()));
             return; // Contact mode keeps the game piece in Bullet, including when contained.
         }
+        if (gamePieceControl == null) {pieceHeld=false;return;} // BIOBUZZ balls stay physical, including with legacy servo code.
 
         if (intakeActive && !pieceHeld) {
             float distance = gamePieceControl.getPhysicsLocation().distance(intakePointWorld);
@@ -288,7 +309,10 @@ public class PhysicsWorld {
     }
 
     public boolean isPieceHeld() { return pieceHeld; }
-    public Vector3f getGamePiecePosition() { return pieceHeld && flexibleIntake == null ? gamePieceNode.getLocalTranslation() : gamePieceControl.getPhysicsLocation(); }
+    public Vector3f getGamePiecePosition() {
+        if(gamePieceControl!=null)return pieceHeld && flexibleIntake==null ? gamePieceNode.getLocalTranslation() : gamePieceControl.getPhysicsLocation();
+        return gamePieces.isEmpty()?null:gamePieces.get(0).body().getPhysicsLocation();
+    }
 
     private Material unshaded(ColorRGBA color) {
         Material m = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");

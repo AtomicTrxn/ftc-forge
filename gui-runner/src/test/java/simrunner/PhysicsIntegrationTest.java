@@ -155,6 +155,27 @@ class PhysicsIntegrationTest {
         } finally { space.destroy(); }
     }
 
+    @Test void fieldStartYawRotatesArticulatedBodiesAndJointAxisTogether() throws Exception {
+        Path path=temp.resolve("placed-slide.urdf");
+        Files.writeString(path,"<robot name='placed'>"+link("base","0 0 0",".1 .1 .1",5)+link("slide","0 0 0",".05 .05 .05",1)
+            +"<joint name='axis' type='prismatic'><parent link='base'/><child link='slide'/><origin xyz='.3 0 0'/><axis xyz='1 0 0'/><limit lower='0' upper='.5'/></joint>"
+            +"<transmission name='tx'><joint name='axis'/><actuator name='motor'/></transmission></robot>");
+        PhysicsSpace space=new PhysicsSpace(PhysicsSpace.BroadphaseType.DBVT);
+        try {
+            space.setGravity(Vector3f.ZERO);HardwareMap map=new HardwareMap();SimDcMotorEx motor=new SimDcMotorEx("motor",new MotorSpec("test",1,2,9,30,12,500));map.register("motor",motor);
+            ImportedRobotScene scene=new ImportedRobotScene(RobotUrdf.parse(path),path,map,new DesktopAssetManager(true),8);
+            PhysicsWorld world=new PhysicsWorld(null,new Node(),space);
+            var robot=new ArticulatedRobot(scene,world,new Node(),new Vector3f(1,2,3),java.util.Map.of(),new com.jme3.math.Quaternion().fromAngleAxis((float)Math.PI/2,Vector3f.UNIT_Y));
+            assertEquals(1,world.getChassisPosition().x,.001);assertEquals(2,world.getChassisPosition().y,.001);assertEquals(3,world.getChassisPosition().z,.001);
+            assertEquals(-1,world.getChassisRotation().mult(Vector3f.UNIT_X).z,.001);
+            assertEquals(2.7,robot.bodyForLink("slide").getPhysicsLocation().z,.001);
+            world.chassisBody().setMass(0);motor.setPower(.5);
+            for(int i=0;i<300;i++)space.update(DT,0);
+            assertTrue(robot.bodyForLink("slide").getPhysicsLocation().z<2.65,"Placed slider must move on rotated world axis");
+            assertEquals(1,robot.bodyForLink("slide").getPhysicsLocation().x,.005);
+        }finally{space.destroy();}
+    }
+
     @Test void nonAdjacentTipCollidesWithOwnChassis() throws Exception {
         Path file = temp.resolve("self-contact.urdf");
         Files.writeString(file, "<robot name='self-contact'>" + link("base", "0 0 0", ".4 .2 .2", 5)

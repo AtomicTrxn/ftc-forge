@@ -19,6 +19,8 @@ The included Gradle wrapper downloads Gradle 8.9 on its first run. From the repo
 
 The last command opens a 3D window; the sample turns the robot and prints IMU yaw before and after `resetYaw()`. Other renderer samples are `BasicMecanumOpMode` (forward/strafe) and `IntakeDemoOpMode` (game-piece capture). On macOS, the renderer task already sets `-XstartOnFirstThread`.
 
+New unconfigured runs use the generic field with no pieces. Select a field and mode with `./gradlew :gui-runner:selectField --args='gui-runner/sample-teamcode FieldDriveOpMode'`. The supplied BIOBUZZ CAD supports field-only and field-with-pieces operation at the same meter-based scale as robot CAD. See [field import, selection and physical limits](gui-runner/FIELD_IMPORT.md). For the illustrative intake demo, add `--field generic --mode game-pieces --piece-set torus` to the renderer arguments.
+
 To use your own robot, replace `gui-runner/sample-teamcode` in the commands with an absolute path or a path relative to the repository root. The second argument is the annotated OpMode's class name or display name. The headless runner accepts an optional third argument for watchdog timeout in milliseconds.
 
 ## Team project configuration

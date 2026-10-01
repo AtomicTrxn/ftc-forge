@@ -77,6 +77,15 @@ public class SimulatorApp extends SimpleApplication {
     private Path screenshotPath;
     private com.jme3.app.state.ScreenshotAppState screenshot;
     private int finishingFrames;
+    private SimConfig simConfig;
+    private String fieldOverride,modeOverride,pieceSetOverride;
+    private boolean previewOnly;
+    private ImportedFieldScene fieldScene;
+    private com.jme3.font.BitmapText fieldStatus;
+    private double renderSeconds;private int renderFrames;
+    private int previewFrames;
+    private double lastPerfReport;
+    private int physicsOverBudgetFrames;private float maxRuntimeFrameMs;
     private final double[] wheelRadii = {WHEEL_RADIUS_M, WHEEL_RADIUS_M, WHEEL_RADIUS_M, WHEEL_RADIUS_M};
 
     public SimulatorApp(Path projectDir, String opModeName) {
@@ -86,11 +95,21 @@ public class SimulatorApp extends SimpleApplication {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
-            System.err.println("Usage: SimulatorApp <projectDir> <opModeName> [screenshot.png]");
+            System.err.println("Usage: SimulatorApp <projectDir> <opModeName> [screenshot.png] [--field generic|field.json] [--mode field-only|game-pieces] [--piece-set biobuzz|torus] [--preview]");
             System.exit(2);
         }
         SimulatorApp app = new SimulatorApp(Path.of(args[0]), args[1]);
-        if (args.length > 2) app.screenshotPath = Path.of(args[2]).toAbsolutePath();
+        for(int i=2;i<args.length;i++) {
+            if(java.util.Set.of("--field","--mode","--piece-set").contains(args[i]) && i+1==args.length)throw new IllegalArgumentException("Missing value for "+args[i]);
+            switch(args[i]) {
+                case "--field" -> app.fieldOverride=args[++i];
+                case "--mode" -> app.modeOverride=args[++i];
+                case "--piece-set" -> app.pieceSetOverride=args[++i];
+                case "--preview" -> app.previewOnly=true;
+                default -> {if(args[i].startsWith("--")||app.screenshotPath!=null)throw new IllegalArgumentException("Unknown/duplicate argument: "+args[i]);app.screenshotPath=Path.of(args[i]).toAbsolutePath();}
+            }
+        }
+        var settings=new com.jme3.system.AppSettings(true);settings.setTitle("FTC Forge — field simulator");settings.setResolution(1280,800);app.setSettings(settings);
         app.setPauseOnLostFocus(false);
         app.setShowSettings(false);
         app.start();
@@ -98,18 +117,37 @@ public class SimulatorApp extends SimpleApplication {
 
     @Override
     public void simpleInitApp() {
-        rootNode.addLight(new com.jme3.light.AmbientLight(new ColorRGBA(.55f, .55f, .55f, 1)));
-        rootNode.addLight(new com.jme3.light.DirectionalLight(new Vector3f(-1, -2, -1).normalizeLocal(), ColorRGBA.White));
+        rootNode.addLight(new com.jme3.light.AmbientLight(new ColorRGBA(.3f, .3f, .3f, 1)));
+        rootNode.addLight(new com.jme3.light.DirectionalLight(new Vector3f(-1, -2, -1).normalizeLocal(),new ColorRGBA(.65f,.65f,.65f,1)));
         bulletAppState = new BulletAppState();
         stateManager.attach(bulletAppState);
         physicsWorld = new PhysicsWorld(assetManager, rootNode, bulletAppState);
 
         setUpPerspectiveCamera();
-        buildField();
-        physicsWorld.buildFieldBoundary();
         bindGamepadControls();
         try {
+            simConfig=SimConfig.load(projectDir);
+            var f=simConfig.field;
+            if(pieceSetOverride!=null)f=new FieldConfig(f.source(),f.mode(),f.packagePath(),pieceSetOverride,f.fullDetail(),f.friction(),f.restitution());
+            if(fieldOverride!=null)f=f.withSource(fieldOverride);
+            if(modeOverride!=null)f=f.withMode(modeOverride);
+            simConfig.field=f.validated();
+            if(f.source().equals("imported")) {
+                var field=new FieldPackage(projectDir.resolve(f.packagePath()));
+                fieldScene=new ImportedFieldScene(field,f,physicsWorld,rootNode,assetManager);
+                if(simConfig.robotStart==null)simConfig.robotStart=new Vector3f(-1.2f,(float)simConfig.startHeightM,1.2f);
+            } else {
+                buildField();physicsWorld.buildFieldBoundary();
+                if(f.hasPieces()&&!f.usesTorus())buildPracticeBalls();
+                System.out.println("[FIELD] Generic | 3.6576 x 3.6576 m | units=m scale=1 | "+f.mode()+" | "+physicsWorld.gamePieces().size()+" balls");
+            }
+            physicsWorld.space().setAccuracy(1f/120);
+            physicsWorld.space().setMaxSubSteps(32);
             loadRobotAndStartOpMode();
+            timer.reset();
+            fieldStatus=new com.jme3.font.BitmapText(guiFont);fieldStatus.setText((fieldScene==null?"Generic field":fieldScene.field.name)+" | "+f.mode()+" | "+physicsWorld.gamePieces().size()+" pieces\nMeters at scale 1 | drag: orbit | scroll: zoom | R: reset field"+(previewOnly?" | preview":""));
+            fieldStatus.setLocalTranslation(15,cam.getHeight()-15,0);guiNode.attachChild(fieldStatus);setDisplayStatView(false);
+            inputManager.addMapping("ResetField",new KeyTrigger(KeyInput.KEY_R));inputManager.addListener((ActionListener)(name,pressed,tpf)->{if(pressed){if(fieldScene!=null)fieldScene.reset();else physicsWorld.resetPieces();}},"ResetField");
             if (screenshotPath != null) {
                 java.nio.file.Files.createDirectories(screenshotPath.getParent());
                 String name = screenshotPath.getFileName().toString();
@@ -225,7 +263,6 @@ public class SimulatorApp extends SimpleApplication {
     }
 
     private void loadRobotAndStartOpMode() throws Exception {
-        SimConfig simConfig = SimConfig.load(projectDir);
         differential = simConfig.drive;
         motorIntake = simConfig.intake;
         Path sourceRoot = projectDir.resolve(simConfig.sourceRoot);
@@ -261,10 +298,13 @@ public class SimulatorApp extends SimpleApplication {
             RobotUrdf urdf = RobotUrdf.parse(urdfPath);
             if (simConfig.totalMassKg != null) urdf = urdf.withTotalMassKg(simConfig.totalMassKg);
             urdf.validateHardwareMap(hardwareMap);
-            importedScene = new ImportedRobotScene(urdf, urdfPath, hardwareMap, assetManager, simConfig.vhacdMaxHulls, java.util.Set.of(motorNames));
+            importedScene = new ImportedRobotScene(urdf, urdfPath, hardwareMap, assetManager, simConfig.vhacdMaxHulls, java.util.Set.of(motorNames),simConfig.field.fullDetail()?0:.0005f);
+            System.out.println("[ROBOT VISUAL] unique triangles "+importedScene.sourceVisualTriangles+" -> "+importedScene.preparedVisualTriangles+"; grid="+(simConfig.field.fullDetail()?0:.0005)+"m, vertex movement <=0.4331mm; collision and inertia use original CAD.");
             importedScene.tireContacts = simConfig.tires != null;
             importedScene.flexibleIntake = simConfig.flexibleIntake;
-            articulated = new ArticulatedRobot(importedScene, physicsWorld, rootNode, new Vector3f(0, (float) simConfig.startHeightM, 0), simConfig.servoPhysics);
+            Vector3f start=simConfig.robotStart==null?new Vector3f(0,(float)simConfig.startHeightM,0):simConfig.robotStart;
+            validateStart(start);
+            articulated = new ArticulatedRobot(importedScene, physicsWorld, rootNode, start, simConfig.servoPhysics,new Quaternion().fromAngleAxis(simConfig.robotYawRad,Vector3f.UNIT_Y));
             robotNode = articulated.chassisNode;
             if (simConfig.tires != null) {
                 physicsWorld.installTires(new TireDrive(physicsWorld, hardwareMap, importedScene, differential, simConfig.tires));
@@ -272,7 +312,8 @@ public class SimulatorApp extends SimpleApplication {
             }
             if (simConfig.flexibleIntake != null) {
                 physicsWorld.installFlexibleIntake(new FlexibleIntake(physicsWorld, importedScene, articulated, simConfig.flexibleIntake));
-                if (simConfig.torusRetention != null) physicsWorld.flexibleIntake().installRetention(articulated, hardwareMap, simConfig.intake, simConfig.torusRetention);
+                if (simConfig.torusRetention != null && simConfig.field.usesTorus()) physicsWorld.flexibleIntake().installRetention(articulated, hardwareMap, simConfig.intake, simConfig.torusRetention);
+                else if(simConfig.torusRetention!=null)System.out.println("[RETENTION] Torus profile inactive for "+simConfig.field.mode()+" / "+simConfig.field.pieceSet()+"; balls use native contacts.");
                 physicsWorld.space().setAccuracy(1f / 480);
                 physicsWorld.space().setMaxSubSteps(64);
             }
@@ -310,33 +351,44 @@ public class SimulatorApp extends SimpleApplication {
             }
         } else {
             buildRobot();
-            physicsWorld.buildChassis(robotNode, CHASSIS_MASS_KG, new Vector3f(0, 0.1f, 0));
+            Vector3f start=simConfig.robotStart==null?new Vector3f(0,.1f,0):simConfig.robotStart;validateStart(start);
+            physicsWorld.buildChassis(robotNode, CHASSIS_MASS_KG,start);
+            physicsWorld.chassisBody().setPhysicsRotation(new Quaternion().fromAngleAxis(simConfig.robotYawRad,Vector3f.UNIT_Y));
         }
-        if (differential != null && importedScene != null) {
+        {
             cam.setFrustumPerspective(45, (float) cam.getWidth() / cam.getHeight(), .01f, 30f);
-            var orbit = new com.jme3.input.ChaseCamera(cam, robotNode, inputManager);
-            orbit.setDefaultDistance(1.2f);
+            Node cameraTarget=robotNode;
+            if(!simConfig.field.usesTorus()) {cameraTarget=new Node("field-camera-target");cameraTarget.setLocalTranslation(0,fieldScene==null?0:.6f,0);rootNode.attachChild(cameraTarget);}
+            var orbit = new com.jme3.input.ChaseCamera(cam, cameraTarget, inputManager);
+            orbit.setDefaultDistance(simConfig.field.usesTorus() && importedScene!=null?1.2f:6.5f);
             orbit.setMinDistance(.35f);
-            orbit.setMaxDistance(6);
+            orbit.setMaxDistance(10);
             orbit.setDefaultHorizontalRotation(.75f);
-            orbit.setDefaultVerticalRotation(.55f);
+            orbit.setDefaultVerticalRotation(.65f);
             orbit.setTrailingEnabled(false);
             orbit.setDragToRotate(true);
             setDisplayStatView(false);
         }
-        physicsWorld.buildGamePiece(simConfig.gamePieceStart==null ? new Vector3f(0.8f, simConfig.flexibleIntake == null ? .05f : .034f, 0) : simConfig.gamePieceStart);
-        if (simConfig.flexibleIntake != null) physicsWorld.gamePieceBody().setPhysicsRotation(
-            new Quaternion().fromAngleAxis(FastMath.HALF_PI, Vector3f.UNIT_X));
+        if(simConfig.field.usesTorus()) {
+            var start=simConfig.gamePieceStart==null?new Vector3f(.8f,simConfig.flexibleIntake==null?.05f:.034f,0):simConfig.gamePieceStart;
+            if(Math.abs(start.x)+.12f>1.8288f||Math.abs(start.z)+.12f>1.8288f)throw new IllegalArgumentException("Practice torus starts outside generic field");
+            physicsWorld.buildGamePiece(start);
+            if(simConfig.flexibleIntake!=null)physicsWorld.gamePieceBody().setPhysicsRotation(new Quaternion().fromAngleAxis(FastMath.HALF_PI,Vector3f.UNIT_X));
+            physicsWorld.rememberPieceStart("practice-torus");
+        }
 
         kinematics = new MecanumKinematics(trackWidthM, wheelBaseM, 2.0);
+        validateInitialContacts();
 
         Telemetry telemetry = new ConsoleTelemetry();
-        opModeSession = Executor.start(target, hardwareMap, telemetry, gamepad1, gamepad2);
+        if(!previewOnly)opModeSession = Executor.start(target, hardwareMap, telemetry, gamepad1, gamepad2);
         System.out.println("[SIM] Running " + target.displayName + " in the jME renderer...");
     }
 
     @Override
     public void simpleUpdate(float tpf) {
+        if(hardwareMap!=null){renderSeconds+=tpf;renderFrames++;if(renderFrames>5){maxRuntimeFrameMs=Math.max(maxRuntimeFrameMs,tpf*1000);if(tpf>physicsWorld.space().getAccuracy()*physicsWorld.space().maxSubSteps())physicsOverBudgetFrames++;}if(renderSeconds-lastPerfReport>=2){lastPerfReport=renderSeconds;System.out.printf(java.util.Locale.ROOT,"[PERF] mean FPS=%.1f bodies=%d pieces=%d%n",renderFrames/renderSeconds,physicsWorld.space().countRigidBodies(),physicsWorld.gamePieces().size());}}
+        if(previewOnly && screenshot!=null && ++previewFrames==30){screenshot.takeScreenshot();finishingFrames=10;}
         if (finishingFrames > 0) {
             if (--finishingFrames == 0) stop();
             return;
@@ -406,6 +458,8 @@ public class SimulatorApp extends SimpleApplication {
             System.out.println("[SIM] OpMode finished. Final chassis position: " + physicsWorld.getChassisPosition()
                 + " yaw=" + yawRad + (physicsWorld.flexibleIntake()==null ? " gamePieceHeld=" : " gamePieceContained=") + physicsWorld.isPieceHeld()
                 + " piece=" + physicsWorld.getGamePiecePosition() + " intake=" + intakePoint);
+            System.out.printf(java.util.Locale.ROOT,"[PERF] run mean FPS=%.1f frames=%d wallFramesSeconds=%.2f pieces=%d heapUsedMiB=%.1f%n",renderFrames/renderSeconds,renderFrames,renderSeconds,physicsWorld.gamePieces().size(),(Runtime.getRuntime().totalMemory()-Runtime.getRuntime().freeMemory())/1048576.);
+            System.out.printf(java.util.Locale.ROOT,"[PERF] physicsOverBudgetFrames=%d maxRuntimeFrameMs=%.2f fixedStepMs=%.3f%n",physicsOverBudgetFrames,maxRuntimeFrameMs,physicsWorld.space().getAccuracy()*1000);
             if (physicsWorld.flexibleIntake() != null && physicsWorld.flexibleIntake().retention != null) {
                 var grip=physicsWorld.flexibleIntake().retention;
                 System.out.println("[RETENTION] state="+grip.state()+" acquisitions="+grip.acquisitions+" releases="+grip.releases+" peakForceN="+grip.peakForceN+" peakTorqueNm="+grip.peakTorqueNm+" peakShaftLoadNm="+grip.peakLoadNm);
@@ -419,6 +473,38 @@ public class SimulatorApp extends SimpleApplication {
                 screenshot.takeScreenshot();
                 finishingFrames = 10;
             }
+        }
+    }
+
+    private void validateStart(Vector3f start) {
+        var half=fieldScene==null?new Vector3f(1.8288f,0,1.8288f):fieldScene.field.halfExtents;
+        float minX=-.2286f,maxX=.2286f,minZ=-.2286f,maxZ=.2286f,minY=-.1f;
+        if(importedScene!=null){importedScene.root.updateGeometricState();if(importedScene.root.getWorldBound() instanceof com.jme3.bounding.BoundingBox box) {
+            minX=Float.POSITIVE_INFINITY;maxX=Float.NEGATIVE_INFINITY;minZ=Float.POSITIVE_INFINITY;maxZ=Float.NEGATIVE_INFINITY;minY=box.getCenter().y-box.getYExtent();
+            var yaw=new Quaternion().fromAngleAxis(simConfig.robotYawRad,Vector3f.UNIT_Y);
+            for(float x:new float[]{box.getCenter().x-box.getXExtent(),box.getCenter().x+box.getXExtent()})for(float z:new float[]{box.getCenter().z-box.getZExtent(),box.getCenter().z+box.getZExtent()}){var p=yaw.mult(new Vector3f(x,0,z));minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minZ=Math.min(minZ,p.z);maxZ=Math.max(maxZ,p.z);}
+        }}
+        if(!Float.isFinite(start.x)||!Float.isFinite(start.y)||!Float.isFinite(start.z)||start.x+minX<-half.x||start.x+maxX>half.x||start.z+minZ<-half.z||start.z+maxZ>half.z||start.y+minY<-.004f)
+            throw new IllegalArgumentException("Robot start footprint must be inside the selected field");
+        if(fieldScene!=null && start.x+maxX>-.65f && start.x+minX<.65f && start.z+maxZ>-.5f && start.z+minZ<.5f)throw new IllegalArgumentException("Robot start overlaps the HIVE/frame envelope; choose robot_start_xyz_m outside it");
+    }
+    private void validateInitialContacts() {
+        var environment=new java.util.HashSet<Long>();
+        if(fieldScene!=null){for(var body:fieldScene.fixed)environment.add(body.nativeId());for(var hive:fieldScene.hives)environment.add(hive.body().nativeId());}
+        for(var piece:physicsWorld.gamePieces())environment.add(piece.body().nativeId());
+        for(var body:physicsWorld.space().getRigidBodyList())if(body.isDynamic()&&!environment.contains(body.nativeId())) {
+            physicsWorld.space().contactTest(body,event->{
+                long other=event.getObjectA().nativeId()==body.nativeId()?event.getObjectB().nativeId():event.getObjectA().nativeId();
+                if(environment.contains(other)&&event.getDistance1()<-.004f)throw new IllegalArgumentException("Robot start penetrates a field obstacle or game piece; choose another robot_start_xyz_m");
+            });
+        }
+    }
+    private void buildPracticeBalls() {
+        for(int i=0;i<6;i++) {
+            float radius=i<2?.03556f:.04597f;String type=i<2?"pollen":i<4?"red_nectar":"blue_nectar";
+            Node node=new Node("practice-"+type+"-"+i);var sphere=new com.jme3.scene.shape.Sphere(12,24,radius);var g=new Geometry(node.getName(),sphere);
+            var m=new Material(assetManager,"Common/MatDefs/Misc/Unshaded.j3md");m.setColor("Color",i<2?ColorRGBA.Yellow:i<4?ColorRGBA.Red:ColorRGBA.Blue);g.setMaterial(m);node.attachChild(g);rootNode.attachChild(node);node.setLocalTranslation(.8f,radius+.002f,-.6f+i*.24f);
+            var body=new com.jme3.bullet.control.RigidBodyControl(new com.jme3.bullet.collision.shapes.SphereCollisionShape(radius),i<2?.0209836f:.0405855f);node.addControl(body);body.setFriction(simConfig.field.friction());body.setRestitution(simConfig.field.restitution());body.setRollingFriction(.005f);physicsWorld.space().add(body);physicsWorld.registerPiece(node.getName(),type,node,body);
         }
     }
 

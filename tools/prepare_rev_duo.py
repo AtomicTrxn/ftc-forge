@@ -200,6 +200,7 @@ def prepare(source, destination, contact_models=False, torus_retention=False):
     ET.indent(robot)
     ET.ElementTree(robot).write(destination/'robot.urdf', encoding='utf-8', xml_declaration=True)
     config = json.loads((destination/'sim.config').read_text())
+    config['field'] = {'source': 'generic', 'mode': 'game-pieces', 'piece_set': 'torus'}
     config['drive']['track_width_m'] = abs(poses['tread'][1][1]-poses['tread_1'][1][1])
     if contact_models:
         config['tires'] = {'traction': {'static_mu': .9, 'sliding_mu': .7, 'lateral_scale': 1,
