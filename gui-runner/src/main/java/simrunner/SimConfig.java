@@ -37,6 +37,7 @@ public class SimConfig {
     public long imuLatencyMs = 8;
     public final List<String> extraClasspath = new ArrayList<>();
     public final Map<String, ServoModel.Spec> servoPhysics = new LinkedHashMap<>();
+    public final Map<String,String> collisionOmissions = new LinkedHashMap<>();
 
     @SuppressWarnings("unchecked")
     public static SimConfig load(Path projectRoot) throws IOException {
@@ -47,6 +48,15 @@ public class SimConfig {
         if (root.containsKey("robotConfig")) config.robotConfig = (String) root.get("robotConfig");
         if (root.containsKey("presetMotors")) config.presetMotors = (String) root.get("presetMotors");
         if (root.containsKey("urdf")) config.urdf = (String) root.get("urdf");
+        if (root.containsKey("collision_omissions")) {
+            var omissions=FieldPackage.map(root.get("collision_omissions"));
+            for(var entry:omissions.entrySet()) {
+                if(entry.getKey().isBlank() || !(entry.getValue() instanceof String reason) || reason.isBlank())
+                    throw new IllegalArgumentException("collision_omissions requires body names and nonempty reasons");
+                config.collisionOmissions.put(entry.getKey(),reason);
+            }
+            if(config.urdf==null)throw new IllegalArgumentException("collision_omissions requires a robot URDF");
+        }
         if (root.containsKey("field")) config.field=FieldConfig.parse(FieldPackage.map(root.get("field")));
         if (root.containsKey("robot_start_xyz_m")) config.robotStart=FieldPackage.pos(root.get("robot_start_xyz_m"));
         if (root.containsKey("robot_start_yaw_rad")) config.robotYawRad=(float)FieldPackage.num(root,"robot_start_yaw_rad");

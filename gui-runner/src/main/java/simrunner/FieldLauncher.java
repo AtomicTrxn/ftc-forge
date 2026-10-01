@@ -47,7 +47,7 @@ public final class FieldLauncher {
                 protected void done(){browse.setEnabled(true);try{packagePath.setText(get().toString());source.setSelectedIndex(1);details.run();}catch(Exception error){JOptionPane.showMessageDialog(window,error.getCause()==null?error.toString():error.getCause().getMessage(),"Import failed",JOptionPane.ERROR_MESSAGE);status.setText("Import failed; select a valid field or Generic.");}}
             }.execute();
         });
-        for(String action:new String[]{"Preview robot + field","Run OpMode"}) {
+        for(String action:new String[]{"Preview robot + field","Review collisions","Run OpMode"}) {
             JButton button=new JButton(action);panel.add(button);button.addActionListener(e->{
                 try {
                     String selected=source.getSelectedIndex()==0?"generic":packagePath.getText();
@@ -59,6 +59,7 @@ public final class FieldLauncher {
                     args.add("--field");args.add(selected);args.add("--mode");args.add(mode.getSelectedIndex()==0?"field-only":"game-pieces");
                     args.add("--piece-set");args.add(source.getSelectedIndex()==1 || pieces.getSelectedIndex()==0?"biobuzz":"torus");
                     if(action.startsWith("Preview"))args.add("--preview");
+                    if(action.equals("Review collisions"))args.add("--collision-review");
                     new ProcessBuilder(args).inheritIO().start();
                 }catch(Exception error){JOptionPane.showMessageDialog(window,error.getMessage(),"Cannot start",JOptionPane.ERROR_MESSAGE);}
             });

@@ -86,6 +86,9 @@ public class SimulatorApp extends SimpleApplication {
     private int previewFrames;
     private double lastPerfReport;
     private int physicsOverBudgetFrames;private float maxRuntimeFrameMs;
+    private boolean collisionReview, collisionOnly, cadVisible=true;
+    private Path collisionReport;
+    private CollisionOverlay collisionOverlay;
     private final double[] wheelRadii = {WHEEL_RADIUS_M, WHEEL_RADIUS_M, WHEEL_RADIUS_M, WHEEL_RADIUS_M};
 
     public SimulatorApp(Path projectDir, String opModeName) {
@@ -95,17 +98,20 @@ public class SimulatorApp extends SimpleApplication {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
-            System.err.println("Usage: SimulatorApp <projectDir> <opModeName> [screenshot.png] [--field generic|field.json] [--mode field-only|game-pieces] [--piece-set biobuzz|torus] [--preview]");
+            System.err.println("Usage: SimulatorApp <projectDir> <opModeName> [screenshot.png] [--field generic|field.json] [--mode field-only|game-pieces] [--piece-set biobuzz|torus] [--preview|--collision-review|--collisions-only] [--collision-report report.json]");
             System.exit(2);
         }
         SimulatorApp app = new SimulatorApp(Path.of(args[0]), args[1]);
         for(int i=2;i<args.length;i++) {
-            if(java.util.Set.of("--field","--mode","--piece-set").contains(args[i]) && i+1==args.length)throw new IllegalArgumentException("Missing value for "+args[i]);
+            if(java.util.Set.of("--field","--mode","--piece-set","--collision-report").contains(args[i]) && i+1==args.length)throw new IllegalArgumentException("Missing value for "+args[i]);
             switch(args[i]) {
                 case "--field" -> app.fieldOverride=args[++i];
                 case "--mode" -> app.modeOverride=args[++i];
                 case "--piece-set" -> app.pieceSetOverride=args[++i];
                 case "--preview" -> app.previewOnly=true;
+                case "--collision-review" -> {app.collisionReview=true;app.previewOnly=true;}
+                case "--collisions-only" -> {app.collisionOnly=true;app.collisionReview=true;app.previewOnly=true;}
+                case "--collision-report" -> app.collisionReport=Path.of(args[++i]).toAbsolutePath();
                 default -> {if(args[i].startsWith("--")||app.screenshotPath!=null)throw new IllegalArgumentException("Unknown/duplicate argument: "+args[i]);app.screenshotPath=Path.of(args[i]).toAbsolutePath();}
             }
         }
@@ -144,9 +150,17 @@ public class SimulatorApp extends SimpleApplication {
             physicsWorld.space().setAccuracy(1f/120);
             physicsWorld.space().setMaxSubSteps(32);
             loadRobotAndStartOpMode();
+            collisionOverlay=new CollisionOverlay(physicsWorld.space(),rootNode,assetManager);
+            collisionOverlay.setVisible(collisionReview);collisionOverlay.update();
+            if(collisionReview)System.out.println("[COLLISION REVIEW] native bodies="+physicsWorld.space().countRigidBodies()+" rendered shapes="+collisionOverlay.shapeCount()+" | TeamCode not started");
+            inputManager.addMapping("CollisionOverlay",new KeyTrigger(KeyInput.KEY_C));
+            inputManager.addMapping("CollisionCad",new KeyTrigger(KeyInput.KEY_V));
+            inputManager.addListener((ActionListener)(name,pressed,tpf)->{if(pressed){if(name.equals("CollisionOverlay"))collisionOverlay.setVisible(!collisionOverlay.visible);else {cadVisible=!cadVisible;setCadVisible(cadVisible);}}},"CollisionOverlay","CollisionCad");
+            if(collisionOnly){cadVisible=false;setCadVisible(false);}
             timer.reset();
             fieldStatus=new com.jme3.font.BitmapText(guiFont);fieldStatus.setText((fieldScene==null?"Generic field":fieldScene.field.name)+" | "+f.mode()+" | "+physicsWorld.gamePieces().size()+" pieces\nMeters at scale 1 | drag: orbit | scroll: zoom | R: reset field"+(previewOnly?" | preview":""));
             fieldStatus.setLocalTranslation(15,cam.getHeight()-15,0);guiNode.attachChild(fieldStatus);setDisplayStatView(false);
+            fieldStatus.setText(fieldStatus.getText()+"\nC: collision overlay (cyan: dynamic, orange: static) | V: CAD visibility"+(collisionReview?" | coverage is not accuracy certification":""));
             inputManager.addMapping("ResetField",new KeyTrigger(KeyInput.KEY_R));inputManager.addListener((ActionListener)(name,pressed,tpf)->{if(pressed){if(fieldScene!=null)fieldScene.reset();else physicsWorld.resetPieces();}},"ResetField");
             if (screenshotPath != null) {
                 java.nio.file.Files.createDirectories(screenshotPath.getParent());
@@ -302,6 +316,11 @@ public class SimulatorApp extends SimpleApplication {
             System.out.println("[ROBOT VISUAL] unique triangles "+importedScene.sourceVisualTriangles+" -> "+importedScene.preparedVisualTriangles+"; grid="+(simConfig.field.fullDetail()?0:.0005)+"m, vertex movement <=0.4331mm; collision and inertia use original CAD.");
             importedScene.tireContacts = simConfig.tires != null;
             importedScene.flexibleIntake = simConfig.flexibleIntake;
+            importedScene.collisionOmissions=simConfig.collisionOmissions;
+            var collisionAudit=CollisionAudit.inspect(importedScene);
+            System.out.println("[COLLISION AUDIT] "+collisionAudit.summary());
+            if(collisionReport!=null)collisionAudit.write(collisionReport,urdfPath);
+            collisionAudit.requireUsable();
             Vector3f start=simConfig.robotStart==null?new Vector3f(0,(float)simConfig.startHeightM,0):simConfig.robotStart;
             validateStart(start);
             articulated = new ArticulatedRobot(importedScene, physicsWorld, rootNode, start, simConfig.servoPhysics,new Quaternion().fromAngleAxis(simConfig.robotYawRad,Vector3f.UNIT_Y));
@@ -382,11 +401,12 @@ public class SimulatorApp extends SimpleApplication {
 
         Telemetry telemetry = new ConsoleTelemetry();
         if(!previewOnly)opModeSession = Executor.start(target, hardwareMap, telemetry, gamepad1, gamepad2);
-        System.out.println("[SIM] Running " + target.displayName + " in the jME renderer...");
+        System.out.println(previewOnly?"[SIM] Physical preview of "+target.displayName+" | TeamCode not started":"[SIM] Running " + target.displayName + " in the jME renderer...");
     }
 
     @Override
     public void simpleUpdate(float tpf) {
+        if(collisionOverlay!=null)collisionOverlay.update();
         if(hardwareMap!=null){renderSeconds+=tpf;renderFrames++;if(renderFrames>5){maxRuntimeFrameMs=Math.max(maxRuntimeFrameMs,tpf*1000);if(tpf>physicsWorld.space().getAccuracy()*physicsWorld.space().maxSubSteps())physicsOverBudgetFrames++;}if(renderSeconds-lastPerfReport>=2){lastPerfReport=renderSeconds;System.out.printf(java.util.Locale.ROOT,"[PERF] mean FPS=%.1f bodies=%d pieces=%d%n",renderFrames/renderSeconds,physicsWorld.space().countRigidBodies(),physicsWorld.gamePieces().size());}}
         if(previewOnly && screenshot!=null && ++previewFrames==30){screenshot.takeScreenshot();finishingFrames=10;}
         if (finishingFrames > 0) {
@@ -487,6 +507,11 @@ public class SimulatorApp extends SimpleApplication {
         if(!Float.isFinite(start.x)||!Float.isFinite(start.y)||!Float.isFinite(start.z)||start.x+minX<-half.x||start.x+maxX>half.x||start.z+minZ<-half.z||start.z+maxZ>half.z||start.y+minY<-.004f)
             throw new IllegalArgumentException("Robot start footprint must be inside the selected field");
         if(fieldScene!=null && start.x+maxX>-.65f && start.x+minX<.65f && start.z+maxZ>-.5f && start.z+minZ<.5f)throw new IllegalArgumentException("Robot start overlaps the HIVE/frame envelope; choose robot_start_xyz_m outside it");
+    }
+    private void setCadVisible(boolean visible) {
+        // Hide only render geometry: body controls and native shapes remain active.
+        for(var child:rootNode.getChildren())if(child!=collisionOverlay.root)
+            child.setCullHint(visible?com.jme3.scene.Spatial.CullHint.Inherit:com.jme3.scene.Spatial.CullHint.Always);
     }
     private void validateInitialContacts() {
         var environment=new java.util.HashSet<Long>();

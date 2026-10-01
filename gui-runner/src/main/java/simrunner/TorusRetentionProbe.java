@@ -30,6 +30,7 @@ public final class TorusRetentionProbe {
         if(config.totalMassKg!=null)urdf=urdf.withTotalMassKg(config.totalMassKg);
         var scene=new ImportedRobotScene(urdf,project.resolve(config.urdf),map,assets,config.vhacdMaxHulls,java.util.Set.copyOf(config.drive.motorNames()));
         scene.tireContacts=true;scene.flexibleIntake=config.flexibleIntake;
+        scene.collisionOmissions=config.collisionOmissions;
         robot=new ArticulatedRobot(scene,world,field,new Vector3f(0,(float)config.startHeightM,0));
         world.installTires(new TireDrive(world,map,scene,config.drive,config.tires));
         world.installFlexibleIntake(new FlexibleIntake(world,scene,robot,config.flexibleIntake));

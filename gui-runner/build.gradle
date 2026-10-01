@@ -50,6 +50,16 @@ tasks.register('selectField', JavaExec) {
     workingDir = rootProject.projectDir
 }
 
+tasks.register('auditCollisions', JavaExec) {
+    group = 'verification'
+    description = 'Report collision coverage for every robot rigid body before physics.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'simrunner.CollisionAuditCli'
+    workingDir = rootProject.projectDir
+    jvmArgs = ['-Djava.awt.headless=true']
+    maxHeapSize = '2g'
+}
+
 tasks.register('previewField', JavaExec) {
     group = 'application'
     description = 'Inspect source/practice field and robot together at true metric scale.'

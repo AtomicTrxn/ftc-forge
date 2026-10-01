@@ -16,6 +16,8 @@ Choose **Generic field** or **Imported CAD field**, then **Field only** or **Fie
 
 Use **Preview robot + field** to inspect the configured physical scene without starting TeamCode. Drag to orbit, scroll to zoom. `R` resets pieces and HIVE positions without restarting the robot or OpMode. Releasing a held torus during reset restores its initial pose and clears retention state.
 
+Choose **Review collisions** to overlay the actual native field, robot and piece collision shapes. C toggles the overlay; V toggles CAD visibility. Cyan shapes are dynamic and orange shapes are static. The overlay preserves physics and never substitutes visual meshes for collision geometry. See [collision review](COLLISION_REVIEW.md) for robot coverage reports and commands.
+
 ## Prepare through the command line
 
 ```sh
