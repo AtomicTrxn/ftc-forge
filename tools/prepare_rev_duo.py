@@ -72,7 +72,8 @@ def transmission(robot, j, motor, reduction):
     ET.SubElement(a, 'mechanicalReduction').text = str(reduction)
 
 
-def prepare(source, destination, contact_models=False):
+def prepare(source, destination, contact_models=False, torus_retention=False):
+    contact_models = contact_models or torus_retention
     source = Path(source).resolve()
     destination = Path(destination).resolve()
     if destination.exists():
@@ -213,6 +214,17 @@ def prepare(source, destination, contact_models=False):
             'damping_ratio': .5, 'max_bend_rad': 1.2, 'friction': 1,
             'contact_stiffness_n_per_m': 500, 'contact_damping_ns_per_m': .3,
             'containment_min_xyz_m': [-.02, -.105, 0], 'containment_max_xyz_m': [.20, .105, .10]}
+    if torus_retention:
+        config['game_piece_start_xyz_m'] = [.42, 0, .034]
+        config['flexible_intake']['containment_min_xyz_m'] = [.18, -.08, .08]
+        config['flexible_intake']['containment_max_xyz_m'] = [.28, .08, .20]
+        config['torus_retention'] = {'seat_xyz_m': [.23, 0, .145], 'exit_xyz_m': [.33, 0, .045],
+            'contact_dwell_s': .015, 'travel_m_per_rad': .012, 'stiffness_n_per_m': 150,
+            'damping_ns_per_m': 4, 'max_force_n': 8, 'break_distance_m': .12,
+            'reflected_shaft_inertia_kg_m2': .0015, 'tilt_rad': math.pi/3,
+            'angular_stiffness_nm_per_rad': .15, 'angular_damping_nms_per_rad': .012,
+            'max_torque_nm': .08, 'angular_travel_rad_per_rad': .15,
+            'contact_stiffness_n_per_m': 100, 'contact_damping_ns_per_m': 1}
     (destination/'sim.config').write_text(json.dumps(config, indent=2)+'\n')
     report = {'source_sha256': hashlib.sha256(raw).hexdigest(), 'source_links': len(links),
               'preserved_visuals': len(tree.findall('.//visual')), 'cad_mass_kg': sum(float(l.find('inertial/mass').get('value')) for l in links.values() if l.find('inertial/mass') is not None),
@@ -226,6 +238,9 @@ def prepare(source, destination, contact_models=False):
             'Quasi-static equal wheel loads; flat static support only', 'Tire friction and reflected inertia unmeasured',
             'Segmented rubber beams; stiffness, friction and damping unmeasured', 'Gearbox losses uncalibrated',
             'Ideal 1:1 intake chain; illustrative torus; containment is spatial and not a latch']
+    if torus_retention:
+        report['limits'][-1] = 'Ideal 1:1 intake chain; illustrative torus; unmeasured compliant pinch/contact compression approximation'
+        report['torus_retention'] = config['torus_retention']
     (destination/'preparation-report.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k != 'assemblies'}, indent=2))
     return destination
@@ -235,9 +250,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('urdf', type=Path)
     parser.add_argument('destination', type=Path)
+    parser.add_argument('--torus-retention', action='store_true', help='Enable contact models and explicit compliant torus pinch approximation')
     parser.add_argument('--contact-models', action='store_true', help='Enable tire slip and flexible paddles with explicit unmeasured baselines')
     args = parser.parse_args()
     try:
-        prepare(args.urdf, args.destination, args.contact_models)
+        prepare(args.urdf, args.destination, args.contact_models, args.torus_retention)
     except (ValueError, OSError, ET.ParseError) as error:
         parser.exit(2, f'Preparation failed: {error}\n')

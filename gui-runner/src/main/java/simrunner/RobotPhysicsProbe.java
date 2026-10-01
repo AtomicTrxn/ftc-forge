@@ -35,6 +35,7 @@ public final class RobotPhysicsProbe {
             ArticulatedRobot robot = new ArticulatedRobot(scene, world, field, new Vector3f(0, (float) config.startHeightM, 0));
             if (config.tires != null) world.installTires(new TireDrive(world,map,scene,config.drive,config.tires));
             if (config.flexibleIntake != null) world.installFlexibleIntake(new FlexibleIntake(world,scene,robot,config.flexibleIntake));
+            if (config.torusRetention != null) world.flexibleIntake().installRetention(robot,map,config.intake,config.torusRetention);
             SimDcMotorEx left = map.get(SimDcMotorEx.class, config.drive.leftMotor()), right = map.get(SimDcMotorEx.class, config.drive.rightMotor());
             left.setDirection(DcMotor.Direction.REVERSE);
             var motors = map.getAll(SimDcMotorEx.class);

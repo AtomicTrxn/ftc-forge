@@ -4,10 +4,11 @@ import com.jme3.math.*;
 import com.jme3.scene.Geometry;
 import java.util.*;
 
-/** Elastic collidable paddles attached to physical intake shafts; no capture forces or teleportation. */
+/** Elastic collidable paddles with optional, explicitly configured compliant pinch retention. */
 final class FlexibleIntake {
     private final PhysicsWorld world;
     private final FlexibleIntakeConfig config;
+    TorusRetention retention;
     final List<FlexibleFlap> flaps = new ArrayList<>();
     FlexibleIntake(PhysicsWorld world, ImportedRobotScene scene, ArticulatedRobot robot, FlexibleIntakeConfig config) {
         this.world=world;this.config=config;
@@ -66,7 +67,13 @@ final class FlexibleIntake {
     void updateVisual(){for(var flap:flaps)flap.updateVisual();}
     double maxDeflectionRad(){return flaps.stream().mapToDouble(FlexibleFlap::maxDeflectionRad).max().orElse(0);}
     double mass(){return flaps.stream().mapToDouble(FlexibleFlap::mass).sum();}
+    void installRetention(ArticulatedRobot robot, com.qualcomm.robotcore.hardware.HardwareMap map, MotorIntakeConfig intake, TorusRetentionConfig spec) {
+        var ids=new java.util.HashSet<Long>();
+        for(var flap:flaps) for(var segment:flap.segments) ids.add(segment.body().nativeId());
+        retention=new TorusRetention(world,robot,map.get(simcore.SimDcMotorEx.class,intake.motor()),intake,spec,ids);
+    }
     boolean contains(Vector3f point) {
+        if(retention!=null && !retention.retained()) return false;
         Vector3f local=world.getChassisRotation().inverse().mult(point.subtract(world.robotPointWorld(Vector3f.ZERO)));
         Vector3f min=config.containmentMin(),max=config.containmentMax();
         return local.x>=min.x && local.x<=max.x && local.y>=min.y && local.y<=max.y && local.z>=min.z && local.z<=max.z;

@@ -272,6 +272,7 @@ public class SimulatorApp extends SimpleApplication {
             }
             if (simConfig.flexibleIntake != null) {
                 physicsWorld.installFlexibleIntake(new FlexibleIntake(physicsWorld, importedScene, articulated, simConfig.flexibleIntake));
+                if (simConfig.torusRetention != null) physicsWorld.flexibleIntake().installRetention(articulated, hardwareMap, simConfig.intake, simConfig.torusRetention);
                 physicsWorld.space().setAccuracy(1f / 480);
                 physicsWorld.space().setMaxSubSteps(64);
             }
@@ -323,7 +324,7 @@ public class SimulatorApp extends SimpleApplication {
             orbit.setDragToRotate(true);
             setDisplayStatView(false);
         }
-        physicsWorld.buildGamePiece(new Vector3f(0.8f, simConfig.flexibleIntake == null ? .05f : .034f, 0));
+        physicsWorld.buildGamePiece(simConfig.gamePieceStart==null ? new Vector3f(0.8f, simConfig.flexibleIntake == null ? .05f : .034f, 0) : simConfig.gamePieceStart);
         if (simConfig.flexibleIntake != null) physicsWorld.gamePieceBody().setPhysicsRotation(
             new Quaternion().fromAngleAxis(FastMath.HALF_PI, Vector3f.UNIT_X));
 
@@ -405,6 +406,10 @@ public class SimulatorApp extends SimpleApplication {
             System.out.println("[SIM] OpMode finished. Final chassis position: " + physicsWorld.getChassisPosition()
                 + " yaw=" + yawRad + (physicsWorld.flexibleIntake()==null ? " gamePieceHeld=" : " gamePieceContained=") + physicsWorld.isPieceHeld()
                 + " piece=" + physicsWorld.getGamePiecePosition() + " intake=" + intakePoint);
+            if (physicsWorld.flexibleIntake() != null && physicsWorld.flexibleIntake().retention != null) {
+                var grip=physicsWorld.flexibleIntake().retention;
+                System.out.println("[RETENTION] state="+grip.state()+" acquisitions="+grip.acquisitions+" releases="+grip.releases+" peakForceN="+grip.peakForceN+" peakTorqueNm="+grip.peakTorqueNm+" peakShaftLoadNm="+grip.peakLoadNm);
+            }
             if (physicsWorld.flexibleIntake() != null) System.out.println("[FLEX] finalBendRad="+physicsWorld.flexibleIntake().maxDeflectionRad());
             if (physicsWorld.tireDrive() != null) System.out.println("[TIRES] " + physicsWorld.tireDrive().states());
             if (articulated != null) System.out.println("[SIM] Final physical joints: " + articulated.jointPositions());
