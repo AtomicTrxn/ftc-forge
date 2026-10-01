@@ -116,4 +116,4 @@ Private evidence is retained under `.local/fields/biobuzz/evidence/`: preparatio
 
 ## Delivery
 
-Code, plan, guide, probes and regression tests are ready for the shipping PR. Local REV DUO launchers include `select-field.command`, `drive-biobuzz-field.command`, `drive-biobuzz-game.command`, and `verify-biobuzz.command`; the supplied field is already prepared.
+Code, plan, guide, probes and regression tests are delivered through [PR #10](https://github.com/AtomicTrxn/ftc-forge/pull/10), with implementation commit `4324edc`. Local REV DUO launchers include `select-field.command`, `drive-biobuzz-field.command`, `drive-biobuzz-game.command`, and `verify-biobuzz.command`; the supplied field is already prepared.
