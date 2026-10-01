@@ -8,7 +8,31 @@ Use one workflow for a **ZIP containing one URDF and its referenced STL meshes**
 ./gradlew :gui-runner:prepareModels --args='.local/models /absolute/team-project'
 ```
 
-The field selector also has **Prepare models / saved scenes…**.
+The field selector also has **Guided model and scene setup…**. The detailed table editor is available with `./gradlew :gui-runner:advancedModels`.
+
+## Guided setup
+
+The default entry opens a wizard. Choose **Set up a simulation**, **Prepare a robot**, or **Prepare a field**. A project is optional while preparing a model.
+
+1. **Choose model**: select a CAD ZIP, saved revision, portable bundle or captured preparation. In a full simulation, **Generic field — no CAD import** skips field preparation. Identical reviewed CAD skips completed model checks. **Generate fresh defaults** starts a separate profile without relying on damaged or unwanted saved settings.
+2. **Size and orientation**: read metric dimensions, select source units, inspect the grid/axes preview and confirm the scale. Robot forward direction is editable. Captured BIOBUZZ retains its authored metric basis.
+3. **Parts and movement**: resolve migration choices, choose roles/joint movement and bind motors/servos from a selected project. Hardware mapping can be deferred for model-only preparation.
+4. **Physics assumptions**: use named controls with explanations and units. Values retain CAD/default/user/calibration provenance. Confirm that remaining defaults are provisional. **Advanced settings** edits the same draft. Close that editor to return to the guide.
+5. **Review and save**: inspect cyan moving shapes, orange fixed shapes and a magenta focused body. Confirm the checklist, then **Run checks and save reviewed model**. Native checks cannot replace visual review or measurement.
+6. **Arrange scene**: choose field-only/game-pieces mode, robot pose, piece templates, duplication/disable and saved poses. **Preview combined scene** requires neither hardware nor TeamCode. **Check scene** validates exact model identities, field bounds and native contacts.
+7. **Finish and use**: export the model bundle, or choose a project and physics precedence, check hardware and discover OpModes. **Use and run selected OpMode** explicitly starts TeamCode; discovery and previews do not.
+
+Every step includes instructions. **Back** revisits earlier pages, **Save and close** retains work, and **Continue saved setup…** resumes the first incomplete or invalidated check. Missing assets or invalid edited values retain the draft and return to the relevant page. Full diagnostics are available through **Technical details**.
+
+Sessions are local working records under `.local/models/sessions/`; they are separate from physical settings and scene layouts. A reused model is collision-reviewed, while running code additionally requires valid scene placement, project configuration and hardware. Model-only preparation can finish without a project. Editing scene placement does not invalidate model collision review.
+
+```sh
+# Unpowered scene checks and preview; no TeamCode discovery required:
+./gradlew :gui-runner:checkScene --args='/absolute/scene.json'
+./gradlew :gui-runner:previewScene --args='/absolute/scene.json'
+```
+
+See [guided setup implementation evidence](../tasks/guided-setup/RESULTS.md) for automated checks and the remaining interactive QA gate.
 
 ## Import, tune and review
 

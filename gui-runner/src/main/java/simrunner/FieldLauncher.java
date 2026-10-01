@@ -17,7 +17,7 @@ public final class FieldLauncher {
         JFrame window=new JFrame("FTC Forge — select field");window.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         JPanel panel=new JPanel(new GridLayout(0,1,8,8));panel.setBorder(BorderFactory.createEmptyBorder(16,16,16,16));window.add(panel);
         panel.add(new JLabel("Robot project: "+project.getFileName()+" | "+opMode));
-        JButton models=new JButton("Prepare models / saved scenes…");panel.add(models);models.addActionListener(e->{try{new ProcessBuilder(Path.of(System.getProperty("java.home"),"bin/java").toString(),"-cp",System.getProperty("java.class.path"),ModelPreparationEditor.class.getName(),Path.of(".local/models").toAbsolutePath().toString(),project.toString()).inheritIO().start();}catch(Exception error){JOptionPane.showMessageDialog(window,error.getMessage());}});
+        JButton models=new JButton("Guided model and scene setup…");panel.add(models);models.addActionListener(e->{try{new ProcessBuilder(Path.of(System.getProperty("java.home"),"bin/java").toString(),"-cp",System.getProperty("java.class.path"),GuidedSetupWizard.class.getName(),Path.of(".local/models").toAbsolutePath().toString(),project.toString()).inheritIO().start();}catch(Exception error){JOptionPane.showMessageDialog(window,error.getMessage());}});
         JComboBox<String> source=new JComboBox<>(new String[]{"Generic field","Imported CAD field"});source.setSelectedIndex(config.field.source().equals("imported")?1:0);panel.add(source);
         JTextField packagePath=new JTextField(config.field.packagePath()==null?"":project.resolve(config.field.packagePath()).toString(),45);panel.add(packagePath);
         JButton browse=new JButton("Choose saved field profile.json or prepared field.json…");panel.add(browse);

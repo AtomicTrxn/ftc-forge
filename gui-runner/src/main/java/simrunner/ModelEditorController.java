@@ -18,9 +18,11 @@ final class ModelEditorController {
         if(!Files.exists(library.resolve("models")))return List.of();
         try(var walk=Files.walk(library.resolve("models"))){return walk.filter(p->p.getFileName().toString().equals("profile.json")).sorted(Comparator.comparingLong((Path p)->{try{return Files.getLastModifiedTime(p).toMillis();}catch(Exception e){return 0;}}).reversed()).toList();}
     }
-    static Process javaProcess(Class<?> cls,List<String> args,boolean graphics)throws Exception {
+    static Process javaProcess(Class<?> cls,List<String> args,boolean graphics)throws Exception {return new ProcessBuilder(javaCommand(cls,args,graphics)).inheritIO().start();}
+    static Process loggedProcess(Class<?> cls,List<String> args,Path log)throws Exception {Files.createDirectories(log.toAbsolutePath().getParent());return new ProcessBuilder(javaCommand(cls,args,false)).redirectErrorStream(true).redirectOutput(log.toFile()).start();}
+    private static List<String> javaCommand(Class<?> cls,List<String> args,boolean graphics) {
         var command=new ArrayList<String>();command.add(Path.of(System.getProperty("java.home"),"bin/java").toString());
         if(graphics&&System.getProperty("os.name").contains("Mac"))command.add("-XstartOnFirstThread");
-        command.addAll(List.of("-Djava.awt.headless=true","-Xmx2g","-cp",System.getProperty("java.class.path"),cls.getName()));command.addAll(args);return new ProcessBuilder(command).inheritIO().start();
+        command.addAll(List.of("-Djava.awt.headless=true","-Xmx2g","-cp",System.getProperty("java.class.path"),cls.getName()));command.addAll(args);return command;
     }
 }

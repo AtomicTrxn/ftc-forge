@@ -34,10 +34,17 @@ public final class ModelPreparationEditor {
     private record Row(Object parent,Object key,Object value,String path){}
     @FunctionalInterface private interface Work{Object run()throws Exception;}
     public static void main(String[] args){Path library=Path.of(args.length>0?args[0]:".local/models");Path project=args.length>1?Path.of(args[1]).toAbsolutePath():null;SwingUtilities.invokeLater(()->new ModelPreparationEditor(library,project).show());}
+    static void editDraft(Path library,Path project,Path draft,Runnable closed){
+        var editor=new ModelPreparationEditor(library,project);editor.show();editor.open(draft);
+        var buttons=new JPanel(new FlowLayout(FlowLayout.LEFT));editor.action(buttons,"Live collision preview",()->{try{ModelEditorController.javaProcess(ModelPreparationPreview.class,List.of(draft.toString()),true);}catch(Exception e){editor.error(e);}});editor.action(buttons,"Bind selected joint…",editor::bind);editor.action(buttons,"Add drive / intake…",editor::runtimeTemplate);
+        var layout=(BorderLayout)editor.window.getContentPane().getLayout();editor.window.remove(layout.getLayoutComponent(BorderLayout.NORTH));editor.window.add(buttons,BorderLayout.NORTH);editor.window.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        editor.window.addWindowListener(new java.awt.event.WindowAdapter(){public void windowClosing(java.awt.event.WindowEvent event){if(editor.busy){editor.status.setText("Please wait for preparation to finish before closing.");return;}editor.debounce.stop();if(editor.table.isEditing())editor.table.getCellEditor().stopCellEditing();editor.debounce.stop();try{ProfileIO.save(draft,editor.profile);editor.work(()->{try{return editor.controller.run("compile",draft.toString());}catch(Exception e){return e;}},x->{editor.window.dispose();closed.run();});}catch(Exception e){editor.error(e);}}});editor.window.revalidate();
+    }
     private ModelPreparationEditor(Path library,Path project){controller=new ModelEditorController(library);this.project=project;debounce.setRepeats(false);}
     private void show(){
         window.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);window.setSize(1220,850);window.setLocationRelativeTo(null);
         JPanel actions=new JPanel(new FlowLayout(FlowLayout.LEFT));
+        action(actions,"Guided setup…",()->{try{var command=new ArrayList<String>(List.of(Path.of(System.getProperty("java.home"),"bin/java").toString(),"-Xmx2g","-cp",System.getProperty("java.class.path"),GuidedSetupWizard.class.getName(),controller.library.toString()));if(project!=null)command.add(project.toString());new ProcessBuilder(command).inheritIO().start();}catch(Exception e){error(e);}});
         action(actions,"Import robot",()->importCAD("robot"));action(actions,"Import field",()->importCAD("field"));
         action(actions,"Open revision",()->openSaved(false));action(actions,"Alternative tuning",()->openSaved(true));
         action(actions,"Capture prepared model",this::capture);action(actions,"Import profile bundle",()->{Path p=choose(false,"Choose portable model ZIP");if(p!=null)work(()->controller.run("import-profile",p.toString(),controller.library.toString()),x->{lastSaved=null;open(x);});});

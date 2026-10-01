@@ -149,7 +149,7 @@ public class SimulatorApp extends SimpleApplication {
                 if(simConfig.robotStart==null)simConfig.robotStart=new Vector3f(-1.2f,(float)simConfig.startHeightM,1.2f);
             } else {
                 buildField();physicsWorld.buildFieldBoundary();
-                if(f.hasPieces()&&!f.usesTorus())buildPracticeBalls();
+                if(f.hasPieces()&&!f.usesTorus())PracticePieces.build(physicsWorld,rootNode,assetManager,false,simConfig.flexibleIntake!=null,simConfig.scenePieces,f.friction(),f.restitution());
                 System.out.println("[FIELD] Generic | 3.6576 x 3.6576 m | units=m scale=1 | "+f.mode()+" | "+physicsWorld.gamePieces().size()+" balls");
             }
             physicsWorld.space().setAccuracy(1f/120);
@@ -395,14 +395,12 @@ public class SimulatorApp extends SimpleApplication {
             setDisplayStatView(false);
         }
         if(simConfig.field.usesTorus()) {
-            var start=simConfig.gamePieceStart==null?new Vector3f(.8f,simConfig.flexibleIntake==null?.05f:.034f,0):simConfig.gamePieceStart;
-            if(Math.abs(start.x)+.12f>1.8288f||Math.abs(start.z)+.12f>1.8288f)throw new IllegalArgumentException("Practice torus starts outside generic field");
-            physicsWorld.buildGamePiece(start);
-            if(simConfig.flexibleIntake!=null)physicsWorld.gamePieceBody().setPhysicsRotation(new Quaternion().fromAngleAxis(FastMath.HALF_PI,Vector3f.UNIT_X));
-            physicsWorld.rememberPieceStart("practice-torus");
+            var layout=simConfig.scenePieces;
+            if(layout.isEmpty()&&simConfig.gamePieceStart!=null){var pos=simConfig.gamePieceStart;layout=java.util.Map.of("practice-torus",java.util.Map.of("enabled",true,"source_id","practice-torus","xyz_m",java.util.List.of((double)pos.x,(double)-pos.z,(double)pos.y),"rpy_rad",java.util.List.of(simConfig.flexibleIntake==null?0.:Math.PI/2,0.,0.)));}
+            PracticePieces.build(physicsWorld,rootNode,assetManager,true,simConfig.flexibleIntake!=null,layout,simConfig.field.friction(),simConfig.field.restitution());
         }
+        if(simConfig.field.hasPieces()&&fieldScene!=null){SceneProfile.legacyPieces(simConfig.scenePieces,fieldScene,physicsWorld);SceneProfile.placePieces(simConfig.scenePieces,physicsWorld);}
 
-        if(simConfig.field.hasPieces()){if(fieldScene!=null)SceneProfile.legacyPieces(simConfig.scenePieces,fieldScene,physicsWorld);if(modelFieldScene==null)SceneProfile.placePieces(simConfig.scenePieces,physicsWorld);}
         kinematics = new MecanumKinematics(trackWidthM, wheelBaseM, 2.0);
         validateInitialContacts();
 
@@ -504,17 +502,10 @@ public class SimulatorApp extends SimpleApplication {
     }
 
     private void validateStart(Vector3f start) {
-        var half=modelFieldScene!=null?modelFieldScene.halfExtents:fieldScene==null?new Vector3f(1.8288f,0,1.8288f):fieldScene.field.halfExtents;
-        float minX=-.2286f,maxX=.2286f,minZ=-.2286f,maxZ=.2286f,minY=-.1f;
-        if(importedScene!=null){importedScene.root.updateGeometricState();if(importedScene.root.getWorldBound() instanceof com.jme3.bounding.BoundingBox box) {
-            minX=Float.POSITIVE_INFINITY;maxX=Float.NEGATIVE_INFINITY;minZ=Float.POSITIVE_INFINITY;maxZ=Float.NEGATIVE_INFINITY;minY=box.getCenter().y-box.getYExtent();
-            var yaw=new Quaternion().fromAngleAxis(simConfig.robotYawRad,Vector3f.UNIT_Y);
-            for(float x:new float[]{box.getCenter().x-box.getXExtent(),box.getCenter().x+box.getXExtent()})for(float z:new float[]{box.getCenter().z-box.getZExtent(),box.getCenter().z+box.getZExtent()}){var p=yaw.mult(new Vector3f(x,0,z));minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minZ=Math.min(minZ,p.z);maxZ=Math.max(maxZ,p.z);}
-        }}
-        if(!Float.isFinite(start.x)||!Float.isFinite(start.y)||!Float.isFinite(start.z)||start.x+minX<-half.x||start.x+maxX>half.x||start.z+minZ<-half.z||start.z+maxZ>half.z||start.y+minY<(modelFieldScene!=null?(float)FieldPackage.num(modelFieldScene.profile.parameters,"floor_top_m"):fieldScene!=null&&fieldScene.field.modelParameters.containsKey("floor_top_m")?(float)FieldPackage.num(fieldScene.field.modelParameters,"floor_top_m"):0)-.004f)
-            throw new IllegalArgumentException("Robot start footprint must be inside the selected field");
-        if(fieldScene!=null && start.x+maxX>-.65f && start.x+minX<.65f && start.z+maxZ>-.5f && start.z+minZ<.5f)throw new IllegalArgumentException("Robot start overlaps the HIVE/frame envelope; choose robot_start_xyz_m outside it");
+        SceneChecks.robotStart(importedScene,start,simConfig.robotYawRad,fieldHalf(),fieldFloor(),fieldScene!=null);
     }
+    private Vector3f fieldHalf(){return modelFieldScene!=null?modelFieldScene.halfExtents:fieldScene!=null?fieldScene.field.halfExtents:new Vector3f(1.8288f,0,1.8288f);}
+    private float fieldFloor(){return modelFieldScene!=null?(float)FieldPackage.num(modelFieldScene.profile.parameters,"floor_top_m"):fieldScene!=null&&fieldScene.field.modelParameters.containsKey("floor_top_m")?(float)FieldPackage.num(fieldScene.field.modelParameters,"floor_top_m"):0;}
     private void setCadVisible(boolean visible) {
         // Hide only render geometry: body controls and native shapes remain active.
         for(var child:rootNode.getChildren())if(child!=collisionOverlay.root)
@@ -524,27 +515,7 @@ public class SimulatorApp extends SimpleApplication {
         var environment=new java.util.HashSet<Long>();
         if(fieldScene!=null){for(var body:fieldScene.fixed)environment.add(body.nativeId());for(var hive:fieldScene.hives)environment.add(hive.body().nativeId());}
         if(modelFieldScene!=null)for(var body:modelFieldScene.bodies)environment.add(body.nativeId());
-        for(var piece:physicsWorld.gamePieces())environment.add(piece.body().nativeId());
-        var half=modelFieldScene!=null?modelFieldScene.halfExtents:fieldScene!=null?fieldScene.field.halfExtents:new Vector3f(1.8288f,0,1.8288f);
-        for(var piece:physicsWorld.gamePieces()) {
-            var p=piece.body().getPhysicsLocation();
-            if(p.y<0||Math.abs(p.x)>half.x||Math.abs(p.z)>half.z)throw new IllegalArgumentException("Game piece starts outside the selected field; edit the saved scene: "+piece.id());
-            physicsWorld.space().contactTest(piece.body(),event->{if(event.getDistance1()<-.004f)throw new IllegalArgumentException("Game-piece start penetrates an obstacle or another piece; edit the saved scene: "+piece.id());});
-        }
-        for(var body:physicsWorld.space().getRigidBodyList())if(body.isDynamic()&&!environment.contains(body.nativeId())) {
-            physicsWorld.space().contactTest(body,event->{
-                long other=event.getObjectA().nativeId()==body.nativeId()?event.getObjectB().nativeId():event.getObjectA().nativeId();
-                if(environment.contains(other)&&event.getDistance1()<-.004f)throw new IllegalArgumentException("Robot start penetrates a field obstacle or game piece; choose another robot_start_xyz_m");
-            });
-        }
-    }
-    private void buildPracticeBalls() {
-        for(int i=0;i<6;i++) {
-            float radius=i<2?.03556f:.04597f;String type=i<2?"pollen":i<4?"red_nectar":"blue_nectar";
-            Node node=new Node("practice-"+type+"-"+i);var sphere=new com.jme3.scene.shape.Sphere(12,24,radius);var g=new Geometry(node.getName(),sphere);
-            var m=new Material(assetManager,"Common/MatDefs/Misc/Unshaded.j3md");m.setColor("Color",i<2?ColorRGBA.Yellow:i<4?ColorRGBA.Red:ColorRGBA.Blue);g.setMaterial(m);node.attachChild(g);rootNode.attachChild(node);node.setLocalTranslation(.8f,radius+.002f,-.6f+i*.24f);
-            var body=new com.jme3.bullet.control.RigidBodyControl(new com.jme3.bullet.collision.shapes.SphereCollisionShape(radius),i<2?.0209836f:.0405855f);node.addControl(body);body.setFriction(simConfig.field.friction());body.setRestitution(simConfig.field.restitution());body.setRollingFriction(.005f);physicsWorld.space().add(body);physicsWorld.registerPiece(node.getName(),type,node,body);
-        }
+        SceneChecks.contacts(physicsWorld,environment,fieldHalf(),fieldFloor());
     }
 
     private static final double WHEEL_RADIUS_M = 0.048; // goBILDA 96mm mecanum wheel (common FTC drivetrain wheel)

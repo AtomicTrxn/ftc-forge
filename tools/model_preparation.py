@@ -514,16 +514,17 @@ def migrate(old,new):
     return new
 
 
-def import_zip(source,library,kind,reuse=None):
+def import_zip(source,library,kind,reuse=None,fresh=False):
     library=Path(library).resolve();library.mkdir(parents=True,exist_ok=True)
     folder=library/'drafts'/uid();folder.mkdir(parents=True)
     try:
         extract(source,folder/'archive');urdfs=[f for f in (folder/'archive').rglob('*') if f.suffix.lower()=='.urdf']
         if len(urdfs)!=1:raise ValueError('Expected one URDF in ZIP')
         urdf=source_copy(urdfs[0],folder/'source');p=new_profile(urdf,kind)
+        if fresh and reuse:raise ValueError('Choose fresh defaults or reuse settings, not both')
         if reuse:verify_receipt(reuse)
         old=read(reuse) if reuse else None
-        if old is None:
+        if old is None and not fresh:
             for file in sorted(library.glob('models/*/revisions/*/profile.json'),key=lambda f:(read(f).get('review',{}).get('state')=='ready',f.stat().st_mtime),reverse=True):
                 saved=read(file)
                 if saved['model_kind']==kind and saved['source']['fingerprint']==p['source']['fingerprint']:verify_receipt(file);old=saved;reuse=file;break
@@ -656,7 +657,7 @@ def import_bundle(bundle,library):
 
 def main():
     a=argparse.ArgumentParser(description=__doc__);sub=a.add_subparsers(dest='command',required=True)
-    im=sub.add_parser('import');im.add_argument('zip');im.add_argument('library');im.add_argument('--kind',choices=['robot','field'],required=True);im.add_argument('--reuse')
+    im=sub.add_parser('import');im.add_argument('zip');im.add_argument('library');im.add_argument('--kind',choices=['robot','field'],required=True);im.add_argument('--reuse');im.add_argument('--fresh',action='store_true')
     for name in ['capture-robot','capture-field']:
         s=sub.add_parser(name);s.add_argument('source');s.add_argument('library')
     s=sub.add_parser('compile');s.add_argument('profile')
@@ -669,7 +670,7 @@ def main():
     s=sub.add_parser('export');s.add_argument('profile');s.add_argument('destination')
     s=sub.add_parser('import-profile');s.add_argument('bundle');s.add_argument('library')
     args=a.parse_args()
-    if args.command=='import':result=import_zip(args.zip,args.library,args.kind,args.reuse)
+    if args.command=='import':result=import_zip(args.zip,args.library,args.kind,args.reuse,args.fresh)
     elif args.command.startswith('capture-'):result=capture(args.source,args.library,args.command[8:])
     elif args.command=='compile':result=compile_profile(args.profile)
     elif args.command=='units':change_units(args.profile,args.unit);result=args.profile

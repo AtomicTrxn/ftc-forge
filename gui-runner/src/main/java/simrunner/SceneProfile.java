@@ -14,7 +14,7 @@ final class SceneProfile {
             if(kind.equals("robot"))root.put("robot_model_profile",model.path.toString());
             else root.put("field",new LinkedHashMap<>(Map.of("source","imported","package",model.path.toString(),"mode",scene.get("mode"))));
         }
-        if(scene.get("field_profile")==null)root.put("field",Map.of("source","generic","mode",scene.get("mode")));
+        if(scene.get("field_profile")==null)root.put("field",Map.of("source","generic","mode",scene.get("mode"),"piece_set",scene.getOrDefault("piece_set","biobuzz")));
         root.put("robot_start_xyz_m",scene.get("robot_start_xyz_m"));root.put("robot_start_yaw_rad",scene.get("robot_start_yaw_rad"));root.put("scene_pieces",scene.get("pieces"));return root;
     }
     static void legacyPieces(Map<String,Object> layout,ImportedFieldScene field,PhysicsWorld world)throws Exception {
