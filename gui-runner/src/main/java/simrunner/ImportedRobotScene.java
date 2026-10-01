@@ -45,6 +45,8 @@ final class ImportedRobotScene {
     private final AssetManager assets;
     private final int vhacdMaxHulls;
     private final java.util.Set<String> driveMotors;
+    private final float visualGridM;
+    long sourceVisualTriangles, preparedVisualTriangles;
     final Node root = new Node("imported-robot");
     private final Map<String, Node> jointNodes = new LinkedHashMap<>();
     final Map<String, Node> linkNodes = new LinkedHashMap<>();
@@ -58,6 +60,11 @@ final class ImportedRobotScene {
 
     ImportedRobotScene(RobotUrdf urdf, Path urdfPath, HardwareMap hardwareMap, AssetManager assets,
                        int vhacdMaxHulls, java.util.Set<String> driveMotors) throws Exception {
+        this(urdf,urdfPath,hardwareMap,assets,vhacdMaxHulls,driveMotors,0);
+    }
+    ImportedRobotScene(RobotUrdf urdf, Path urdfPath, HardwareMap hardwareMap, AssetManager assets,
+                       int vhacdMaxHulls, java.util.Set<String> driveMotors,float visualGridM) throws Exception {
+        this.visualGridM=visualGridM;
         this.driveMotors = java.util.Set.copyOf(driveMotors);
         this.urdf = urdf;
         this.urdfPath = urdfPath;
@@ -220,6 +227,9 @@ final class ImportedRobotScene {
     private double rigidMass(RobotUrdf.Link link) { return link.massKg()*rigidFraction(link.name()); }
 
     private Mesh visualMesh(RobotUrdf.Geometry g) throws Exception {
+        return mesh(g,true);
+    }
+    private Mesh mesh(RobotUrdf.Geometry g,boolean visual) throws Exception {
         return switch (g.kind()) {
             case "box" -> new Box((float) g.dimensions()[0] / 2, (float) g.dimensions()[2] / 2,
                 (float) g.dimensions()[1] / 2);
@@ -227,10 +237,11 @@ final class ImportedRobotScene {
             case "sphere" -> new Sphere(12, 24, (float) g.dimensions()[0]);
             case "mesh" -> {
                 Path path = resolveMesh(g.meshFile());
-                String key = path.toString() + java.util.Arrays.toString(g.meshScale());
+                String key = path.toString() + java.util.Arrays.toString(g.meshScale())+(visual?"visual":"collision");
                 Mesh mesh = meshCache.get(key);
                 if (mesh == null) {
                     mesh = StlMeshLoader.load(path, g.meshScale(), 500_000);
+                    if(visual){sourceVisualTriangles+=mesh.getTriangleCount();if(visualGridM>0 && mesh.getTriangleCount()>10_000)mesh=MetricVisualLod.cluster(mesh,visualGridM);preparedVisualTriangles+=mesh.getTriangleCount();}
                     meshCache.put(key, mesh);
                 }
                 yield mesh;
@@ -246,7 +257,7 @@ final class ImportedRobotScene {
             case "sphere" -> new SphereCollisionShape((float) g.dimensions()[0]);
             case "cylinder" -> new com.jme3.bullet.collision.shapes.CylinderCollisionShape(
                 new Vector3f((float) g.dimensions()[0], (float) g.dimensions()[0], (float) g.dimensions()[1] / 2), 2);
-            case "mesh" -> decompose(visualMesh(g));
+            case "mesh" -> decompose(mesh(g,false));
             default -> throw new IllegalArgumentException("Unsupported geometry " + g.kind());
         };
         if (shape.isConvex()) {

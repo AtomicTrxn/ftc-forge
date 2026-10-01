@@ -52,6 +52,10 @@ final class ArticulatedRobot implements PhysicsTickListener {
 
     ArticulatedRobot(ImportedRobotScene scene, PhysicsWorld world, Node field, Vector3f start,
                      Map<String, ServoModel.Spec> servoSpecs) throws Exception {
+        this(scene,world,field,start,servoSpecs,new Quaternion());
+    }
+    ArticulatedRobot(ImportedRobotScene scene, PhysicsWorld world, Node field, Vector3f start,
+                     Map<String, ServoModel.Spec> servoSpecs, Quaternion placement) throws Exception {
         this.scene = scene;
         this.servoSpecs = servoSpecs;
         if (scene.urdf.links.values().stream().allMatch(link -> link.collisions().isEmpty()))
@@ -71,8 +75,8 @@ final class ArticulatedRobot implements PhysicsTickListener {
         Map<String, Quaternion> jointRotations = new LinkedHashMap<>();
         for (RobotUrdf.Joint joint : scene.urdf.joints.values()) {
             Node child = scene.linkNodes.get(joint.child());
-            jointPivots.put(joint.name(), child.getWorldTranslation().add(start));
-            jointRotations.put(joint.name(), child.getWorldRotation().clone());
+            jointPivots.put(joint.name(), placement.mult(child.getWorldTranslation()).add(start));
+            jointRotations.put(joint.name(), placement.mult(child.getWorldRotation()));
         }
         for (ImportedRobotScene.Part part : parts) {
             Node bodyNode = new Node("body-" + part.name());
@@ -82,8 +86,8 @@ final class ArticulatedRobot implements PhysicsTickListener {
             part.visual().setLocalRotation(principalInverse);
             bodyNode.attachChild(part.visual());
             field.attachChild(bodyNode);
-            Vector3f center = part.origin().getTranslation().add(start)
-                .add(part.origin().getRotation().mult(part.com()));
+            Vector3f center = placement.mult(part.origin().getTranslation()
+                .add(part.origin().getRotation().mult(part.com()))).add(start);
             RigidBodyControl body;
             if (part.name().equals(scene.urdf.rootLink)) {
                 world.buildChassis(bodyNode, part.mass(), center, part.shape());
@@ -94,7 +98,7 @@ final class ArticulatedRobot implements PhysicsTickListener {
                 body.setPhysicsLocation(center);
                 world.space().add(body);
             }
-            body.setPhysicsRotation(part.origin().getRotation().mult(part.principalRotation()));
+            body.setPhysicsRotation(placement.mult(part.origin().getRotation()).mult(part.principalRotation()));
             body.setInverseInertiaLocal(new Vector3f(1f / part.inertia().x,
                 1f / part.inertia().y, 1f / part.inertia().z));
             body.setEnableSleep(false);

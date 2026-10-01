@@ -40,6 +40,7 @@ final class TorusRetention implements PhysicsTickListener {
     State state(){return state;}
     Vector3f anchor(){return anchor==null?Vector3f.ZERO:anchor.clone();}
     boolean retained(){return state==State.SEATED;}
+    void reset(){state=State.FREE;piece=null;anchor=null;normalAnchor=null;dwell=0;cooldown=0;robot.setShaftLoad(intake.motor(),0);}
     boolean loadedContact() {
         if (piece==null) return false;
         for (long manifold:world.space().listManifoldIds()) {
