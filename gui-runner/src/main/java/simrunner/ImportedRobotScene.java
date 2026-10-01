@@ -38,6 +38,9 @@ final class ImportedRobotScene {
     final RobotUrdf urdf;
     List<TireDrive.Wheel> driveWheels = List.of();
     boolean tireContacts;
+    boolean passiveConstruction, lockChassisLevel=true, contactCompliance;
+    float collisionMarginM=.002f, contactStiffness=1e30f, contactDamping=.1f;
+    Map<String,Object> modelMaterials=Map.of(), passiveJoints=Map.of();
     FlexibleIntakeConfig flexibleIntake;
     Map<String,String> collisionOmissions = Map.of();
     final Map<String, List<Geometry>> visuals = new LinkedHashMap<>();
@@ -267,7 +270,7 @@ final class ImportedRobotScene {
             default -> throw new IllegalArgumentException("Unsupported geometry " + g.kind());
         };
         if (shape.isConvex()) {
-            float margin=.002f;
+            float margin=collisionMarginM;
             if(g.kind().equals("box")) for(double dimension:g.dimensions()) margin=Math.min(margin,(float)dimension/8);
             shape.setMargin(margin); // A thin intake ramp needs a skin smaller than its half thickness.
         }
@@ -291,7 +294,7 @@ final class ImportedRobotScene {
         CompoundCollisionShape result = new CompoundCollisionShape();
         for (Vhacd4Hull hull : hulls) {
             HullCollisionShape shape = new HullCollisionShape(hull);
-            shape.setMargin(.002f);
+            shape.setMargin(collisionMarginM);
             result.addChildShape(shape);
         }
         System.out.println("[IMPORT] V-HACD produced " + hulls.size() + " hulls for imported geometry");

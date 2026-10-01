@@ -41,6 +41,7 @@ public class PhysicsWorld {
     private final PhysicsSpace physicsSpace;
 
     private RigidBodyControl chassisControl;
+    boolean driveControllerEnabled=true;
     private RigidBodyControl gamePieceControl;
     private Node gamePieceNode;
     record GamePiece(String id, String type, Node node, RigidBodyControl body,
@@ -51,6 +52,7 @@ public class PhysicsWorld {
         if(gamePieces.stream().anyMatch(p->p.id().equals(id)))throw new IllegalArgumentException("Duplicate game piece: "+id);
         gamePieces.add(new GamePiece(id,type,node,body,body.getPhysicsLocation(),body.getPhysicsRotation()));
     }
+    void removePiece(String id){var p=gamePieces.stream().filter(x->x.id().equals(id)).findFirst().orElseThrow();if(physicsSpace.contains(p.body()))physicsSpace.remove(p.body());p.node().removeFromParent();gamePieces.remove(p);}
     void rememberPieceStart(String id) {
         for(int i=0;i<gamePieces.size();i++){var p=gamePieces.get(i);if(p.id().equals(id))gamePieces.set(i,new GamePiece(p.id(),p.type(),p.node(),p.body(),p.body().getPhysicsLocation(),p.body().getPhysicsRotation()));}
     }
@@ -205,7 +207,7 @@ public class PhysicsWorld {
     }
 
     private void applyDriveImpulse(float dt) {
-        if (dt <= 0 || !chassisControl.isDynamic()) return;
+        if (!driveControllerEnabled || dt <= 0 || !chassisControl.isDynamic()) return;
         if (tireDrive != null) { tireDrive.tick(dt); return; }
         Vector3f desired = getChassisRotation().mult(new Vector3f(
             (float) driveTarget.vx, 0, (float) -driveTarget.vy));

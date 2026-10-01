@@ -30,6 +30,7 @@ public final class RobotPhysicsProbe {
             urdf.validateHardwareMap(map);
             ImportedRobotScene scene = new ImportedRobotScene(urdf, project.resolve(config.urdf), map, assets, config.vhacdMaxHulls,
                 java.util.Set.copyOf(config.drive.motorNames()));
+            if(config.robotProfile!=null)config.robotProfile.configure(scene);
             scene.tireContacts = config.tires != null;
             scene.flexibleIntake = config.flexibleIntake;
             scene.collisionOmissions = config.collisionOmissions;

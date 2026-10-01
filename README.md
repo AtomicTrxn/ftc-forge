@@ -21,6 +21,8 @@ The last command opens a 3D window; the sample turns the robot and prints IMU ya
 
 New unconfigured runs use the generic field with no pieces. Select a field and mode with `./gradlew :gui-runner:selectField --args='gui-runner/sample-teamcode FieldDriveOpMode'`. The supplied BIOBUZZ CAD supports field-only and field-with-pieces operation at the same meter-based scale as robot CAD. See [field import, selection and physical limits](gui-runner/FIELD_IMPORT.md). For the illustrative intake demo, add `--field generic --mode game-pieces --piece-set torus` to the renderer arguments.
 
+Prepare new robot and field URDF/STL ZIPs with `./gradlew :gui-runner:prepareModels`. The editor provides editable defaults, live native collision preview, versioned reusable profiles, migration choices, and separate saved scenes. Identical CAD reuses its reviewed tuning; changed CAD requires review. See [model preparation and portable settings](gui-runner/MODEL_PREPARATION.md).
+
 Imported robot collision coverage is checked per rigid body before physics starts. The selector's **Review collisions** action shows actual native shapes for the selected robot and field; C toggles collision shapes and V toggles CAD visibility. Save a coverage report with `./gradlew :gui-runner:auditCollisions --args='/absolute/robotProject /absolute/report.json'`. See [collision review](gui-runner/COLLISION_REVIEW.md).
 
 To use your own robot, replace `gui-runner/sample-teamcode` in the commands with an absolute path or a path relative to the repository root. The second argument is the annotated OpMode's class name or display name. The headless runner accepts an optional third argument for watchdog timeout in milliseconds.

@@ -31,16 +31,17 @@ final class ImportedFieldScene implements PhysicsTickListener {
         this.field=field;this.config=config;this.world=world;this.assets=assets;
         scene.attachChild(root);
         Node floor=new Node("field-floor-collision");root.attachChild(floor);
-        var floorShape=new BoxCollisionShape(new Vector3f(field.halfExtents.x,.01f,field.halfExtents.z));floorShape.setMargin(.001f);
-        var floorBody=new RigidBodyControl(floorShape,0);floor.addControl(floorBody);floorBody.setPhysicsLocation(new Vector3f(0,-.01f,0));
-        floorBody.setFriction(config.friction());world.space().add(floorBody);fixed.add(floorBody);
+        float floorHalf=parameter("floor_thickness_m",.02f)/2;
+        var floorShape=new BoxCollisionShape(new Vector3f(field.halfExtents.x,floorHalf,field.halfExtents.z));floorShape.setMargin(parameter("floor_margin_m",.001f));
+        var floorBody=new RigidBodyControl(floorShape,0);floor.addControl(floorBody);floorBody.setPhysicsLocation(new Vector3f(0,parameter("floor_top_m",0)-floorHalf,0));
+        material(floorBody);world.space().add(floorBody);fixed.add(floorBody);
         for(var inst:field.instances) {
             String owner=str(inst,"owner"),cat=str(inst,"category");
             if(!owner.equals("fixed")||cat.equals("reference")||cat.equals("detail")&&!config.fullDetail())continue;
             Node node=new Node(str(inst,"id"));root.attachChild(node);node.setLocalTransform(transform(inst));node.attachChild(geometry(inst));
             var shape=shape(str(inst,"mesh"));
             if(shape!=null && !cat.equals("floor") && !cat.equals("decoration") && !cat.equals("detail")) {
-                var body=new RigidBodyControl(shape,0);node.addControl(body);body.setFriction(config.friction());world.space().add(body);fixed.add(body);
+                var body=new RigidBodyControl(shape,0);node.addControl(body);material(body);world.space().add(body);fixed.add(body);
             }
         }
         for(var h:field.hives) buildHive(h);
@@ -51,6 +52,14 @@ final class ImportedFieldScene implements PhysicsTickListener {
         for(var note:field.approximations)System.out.println("[FIELD MODEL] "+note);
     }
 
+    private float parameter(String key,float fallback){return field.modelParameters.containsKey(key)?(float)num(field.modelParameters,key):fallback;}
+    private void material(RigidBodyControl body){
+        boolean dynamic=body.isDynamic();body.setFriction(parameter("friction",config.friction()));
+        body.setRestitution(parameter(dynamic?"restitution":"fixed_restitution",dynamic?config.restitution():0));
+        body.setRollingFriction(parameter(dynamic?"rolling_friction":"fixed_rolling_friction",dynamic?.005f:0));
+        body.setSpinningFriction(parameter(dynamic?"spinning_friction":"fixed_spinning_friction",dynamic?.005f:0));
+        if(Boolean.TRUE.equals(field.modelParameters.get("use_contact_compliance"))){body.setContactStiffness(parameter("contact_stiffness_n_per_m",1e30f));body.setContactDamping(parameter("contact_damping_ns_per_m",.1f));}
+    }
     Geometry geometry(Map<String,Object> instance) throws Exception {
         String id=str(instance,"mesh");Mesh mesh=meshCache.get(id);
         if(mesh==null){mesh=StlMeshLoader.load(field.resolve(str(field.meshes.get(id),"file")),new double[]{1,1,1},100_000);meshCache.put(id,mesh);}
@@ -70,11 +79,11 @@ final class ImportedFieldScene implements PhysicsTickListener {
         switch(str(data,"kind")) {
             case "boxes" -> {
                 var boxes=maps(data.get("boxes"));if(boxes.size()>500)throw new IllegalArgumentException("Profile box budget exceeded");
-                for(var item:boxes){var size=pos(item.get("size_m"));size.set(Math.abs(size.x),Math.abs(size.y),Math.abs(size.z));var box=new BoxCollisionShape(size.mult(.5f));box.setMargin(.0005f);compound.addChildShape(box,pos(item.get("center_m")));}
+                for(var item:boxes){var size=pos(item.get("size_m"));size.set(Math.abs(size.x),Math.abs(size.y),Math.abs(size.z));var box=new BoxCollisionShape(size.mult(.5f));box.setMargin(parameter("collision_margin_m",.0005f));compound.addChildShape(box,pos(item.get("center_m")));}
             }
             case "box" -> {
                 var size=pos(data.get("size_m"));size=new Vector3f(Math.abs(size.x),Math.abs(size.y),Math.abs(size.z));
-                var box=new BoxCollisionShape(size.mult(.5f));box.setMargin(Math.min(.0005f,Math.min(size.x,Math.min(size.y,size.z))/8));
+                var box=new BoxCollisionShape(size.mult(.5f));box.setMargin(Math.min(parameter("collision_margin_m",.0005f),Math.min(size.x,Math.min(size.y,size.z))/8));
                 compound.addChildShape(box,pos(data.get("center_m")));
             }
             case "ring" -> {
@@ -87,14 +96,14 @@ final class ImportedFieldScene implements PhysicsTickListener {
                         double a=(i+k)*Math.PI*2/segments;
                         points.add(new Vector3f(radius*(float)Math.cos(a),y,-radius*(float)Math.sin(a)));
                     }
-                    var hull=new HullCollisionShape(points);hull.setMargin(.0005f);compound.addChildShape(hull);
+                    var hull=new HullCollisionShape(points);hull.setMargin(parameter("collision_margin_m",.0005f));compound.addChildShape(hull);
                 }
             }
             case "hulls" -> {
                 if(!(data.get("hulls_m") instanceof List<?> hulls)||hulls.size()>1000)throw new IllegalArgumentException("Invalid sheet hull budget");
                 for(Object h:hulls) {
                     if(!(h instanceof List<?> points)||points.size()<6||points.size()>512)throw new IllegalArgumentException("Invalid convex surface patch");
-                    var hull=new HullCollisionShape(points.stream().map(FieldPackage::pos).toList());hull.setMargin(.0005f);compound.addChildShape(hull);
+                    var hull=new HullCollisionShape(points.stream().map(FieldPackage::pos).toList());hull.setMargin(parameter("collision_margin_m",.0005f));compound.addChildShape(hull);
                 }
             }
             default -> throw new IllegalArgumentException("Unknown field collision kind");
@@ -106,7 +115,7 @@ final class ImportedFieldScene implements PhysicsTickListener {
         Node node=new Node(str(inst,"id"));root.attachChild(node);node.setLocalTransform(transform(inst));var geom=geometry(inst);geom.setLocalTranslation(pos(inst.get("mesh_center_m")).negate());node.attachChild(geom);
         var sphere=new SphereCollisionShape((float)num(inst,"radius_m"));
         var body=new RigidBodyControl(sphere,(float)num(inst,"mass_kg"));node.addControl(body);
-        body.setFriction(config.friction());body.setRestitution(config.restitution());body.setRollingFriction(.005f);body.setSpinningFriction(.005f);
+        material(body);
         body.setCcdMotionThreshold(.02f);body.setCcdSweptSphereRadius((float)num(inst,"radius_m")*.8f);
         world.space().add(body);world.registerPiece(str(inst,"id"),str(inst,"category"),node,body);
     }

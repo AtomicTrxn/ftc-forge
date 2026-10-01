@@ -17,7 +17,8 @@ public final class FieldPhysicsProbe {
     public static void main(String[] args)throws Exception {
         if(args.length!=1)throw new IllegalArgumentException("Usage: FieldPhysicsProbe <prepared field.json>");
         NativeLibraryLoader.loadNativeLibrary("bulletjme",true);
-        var field=new FieldPackage(Path.of(args[0]));
+        Path file=Path.of(args[0]);if(file.getFileName().toString().equals("profile.json")){var p=new ModelProfile(file,true);if(!p.legacyField())throw new IllegalArgumentException("BIOBUZZ probe requires BIOBUZZ adapter; use validateModel for a general field");file=p.artifact("field");}
+        var field=new FieldPackage(file);
         for(String mode:List.of("field-only","game-pieces")) {
             var space=new PhysicsSpace(PhysicsSpace.BroadphaseType.DBVT);space.getSolverInfo().setNumIterations(40);space.setAccuracy(DT);
             int[] ticks={0};space.addTickListener(new PhysicsTickListener(){public void prePhysicsTick(PhysicsSpace s,float dt){ticks[0]++;}public void physicsTick(PhysicsSpace s,float dt){}});
