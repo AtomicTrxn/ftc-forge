@@ -66,4 +66,4 @@ Evidence remains private in `.local/collision-review/evidence/`: real/raw covera
 
 ## Delivery
 
-Implementation, plan, guide and regressions are ready for the shipping PR.
+Implementation, plan, guide and regressions are delivered through [PR #11](https://github.com/AtomicTrxn/ftc-forge/pull/11), with implementation commit `1b4664e`.
