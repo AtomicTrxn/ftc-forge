@@ -39,6 +39,7 @@ final class ImportedRobotScene {
     List<TireDrive.Wheel> driveWheels = List.of();
     boolean tireContacts;
     FlexibleIntakeConfig flexibleIntake;
+    Map<String,String> collisionOmissions = Map.of();
     final Map<String, List<Geometry>> visuals = new LinkedHashMap<>();
     private final Path urdfPath;
     final HardwareMap hardwareMap;
@@ -158,13 +159,18 @@ final class ImportedRobotScene {
         }
     }
 
+    void groupParts() {
+        owners.clear();
+        wheelLinks.clear();
+        assignParts(urdf.rootLink, urdf.rootLink, false);
+    }
+
     /** Weld fixed subtrees and keep wheel mass as ballast without wheel-ground traction. */
     List<Part> parts() throws Exception {
         root.updateGeometricState();
         if (tireContacts) driveWheels = TireDrive.layout(this);
-        owners.clear();
-        wheelLinks.clear();
-        assignParts(urdf.rootLink, urdf.rootLink, false);
+        groupParts();
+        CollisionAudit.inspect(this).requireUsable();
         List<Part> result = new ArrayList<>();
         for (String name : new java.util.LinkedHashSet<>(owners.values())) {
             Node originNode = linkNodes.get(name);
