@@ -89,6 +89,7 @@ final class ArticulatedRobot implements PhysicsTickListener {
             if (part.name().equals(scene.urdf.rootLink)) {
                 world.buildChassis(bodyNode, part.mass(), center, part.shape());
                 body = world.chassisBody();
+                if(scene.wheelContactsEnabled())body.setFriction(.5f);
             } else {
                 body = new RigidBodyControl(part.shape(), (float) part.mass());
                 bodyNode.addControl(body);
@@ -120,6 +121,7 @@ final class ArticulatedRobot implements PhysicsTickListener {
                 + inertia.z * yawAxis.z * yawAxis.z + body.part().mass() * (offset.x * offset.x + offset.z * offset.z);
         }
         world.setDriveAssemblyProperties((float) scene.urdf.totalMassKg(), assemblyYawInertia);
+        if(scene.wheelContactsEnabled())world.installDriveContacts(new DriveContacts(world,scene.driveContacts,chassis.part().contactLinks(),scene.wheelJoints));
         java.util.Set<String> usedMotors = new java.util.HashSet<>();
         for (RobotUrdf.Joint joint : scene.urdf.joints.values()) {
             if (joint.type().equals("fixed") || scene.wheelLinks.contains(joint.child())) continue;

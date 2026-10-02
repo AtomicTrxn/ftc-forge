@@ -19,7 +19,7 @@ from prepare_biobuzz import extract, clustered, bounds, write_stl, combine, seri
 from prepare_rev_duo import rotation
 
 VERSION = 1
-RUNTIME_KEYS = ['drive', 'intake', 'tires', 'flexible_intake', 'torus_retention', 'servoPhysics',
+RUNTIME_KEYS = ['drive', 'drive_contacts', 'intake', 'tires', 'flexible_intake', 'torus_retention', 'servoPhysics',
                 'collision_omissions', 'total_mass_kg', 'vhacd_max_hulls', 'start_height_m', 'imu_latency_ms']
 DEFAULTS = dict(length_unit='m', up_axis='Z', origin_xyz_m=[0.,0.,0.], origin_rpy_rad=[0.,0.,0.],
                 collision_margin_m=.002, floor_thickness_m=.02, floor_margin_m=.001, contact_stiffness_n_per_m=1e30, contact_damping_ns_per_m=.1, chassis_lock_level=True, use_contact_compliance=False, fixed_restitution=0., fixed_rolling_friction=0., fixed_spinning_friction=0., floor_strategy='source', visual_grid_m=.0005, collision_grid_m=.001,
@@ -189,9 +189,20 @@ def new_profile(urdf, kind, runtime=None):
     description=describe(urdf);source_xml=xml(urdf);owners=body_owners(description,runtime)
     covered={owners[n] for n,l in description['links'].items() if l['collisions']}
     p={'schema_version':VERSION,'profile_id':uid(),'revision_id':uid(),'model_kind':kind,'name':xml(urdf).get('name','Imported model'),'adapter':'general','source':{**description,'files':{str(f.relative_to(urdf.parent)):sha(f) for f in urdf.parent.rglob('*') if f.is_file()}},'parameters':copy.deepcopy(DEFAULTS),'entities':{},'runtime':runtime or {},'provenance':{},'review':{'state':'draft'},'migration':{'pending':[],'decisions':[]}}
+    powered={t['joint'] for t in description['transmission_bindings'] if t['actuators']}
+    wheel_roots={}
+    def wheel_root(name):
+        if name not in wheel_roots:
+            link=description['links'][name]
+            wheel_roots[name]=name if link['joint'] and link['joint']['type']=='continuous' and link['joint']['name'] in powered else wheel_root(link['parent']) if link['parent'] is not None and link['joint']['type']=='fixed' else None
+        return wheel_roots[name]
+    if kind=='robot' and runtime is None:
+        for name in description['links']:wheel_root(name)
+    wheel_covered={wheel_roots[n] for n,l in description['links'].items() if l['collisions'] and wheel_roots.get(n)}
     for n,l in description['links'].items():
         lo,hi=l['bounds'];size=[max(DEFAULTS['minimum_thickness_m'],hi[i]-lo[i]) for i in range(3)]
-        strategy='source' if l['collisions'] else 'none' if owners[n] in covered or not l['visuals'] else 'visual' if all(v['geometry']['kind']!='mesh' for v in l['visuals']) else 'box'
+        needs_wheel_geometry=wheel_roots.get(n) is not None and wheel_roots[n] not in wheel_covered
+        strategy='source' if l['collisions'] else 'none' if owners[n] in covered and not needs_wheel_geometry or not l['visuals'] else 'visual' if all(v['geometry']['kind']!='mesh' for v in l['visuals']) else 'box'
         p['entities'][n]={'id':uid(),'settings':{'role':'structure','collision_strategy':strategy,'box_size_m':size,'collision_xyz_m':[(lo[i]+hi[i])/2 for i in range(3)],'collision_rpy_rad':[0.,0.,0.],'sphere_radius_m':max(size)/2,'cylinder_length_m':size[2],'mass_mode':'source' if l['mass_kg']>0 else 'fallback','mass_kg':l['mass_kg'] if l['mass_kg']>0 else DEFAULTS['fallback_mass_kg'],'inertia_mode':'source' if l['inertia'] and l['mass_kg']>0 else 'box','inertia_kg_m2':[.01,.01,.01,0.,0.,0.],'com_xyz_m':[0.,0.,0.],'material_override':False,'friction':.6,'restitution':.15,'rolling_friction':.005,'spinning_friction':.005,'joint':copy.deepcopy(l['joint']),'joint_spring_nm_per_rad':0.,'joint_damping_nm_s':0.,'joint_rest_rad':0.,'joint_spring_n_per_m':0.,'joint_damping_ns_per_m':0.,'joint_rest_m':0.,'actuators':[{'name':a.get('name'),'mechanicalReduction':float(a.findtext('mechanicalReduction','1'))} for tx in source_xml.findall('transmission') if tx.find('joint').get('name')==(l['joint'] or {}).get('name') for a in tx.findall('actuator')]},'assumptions':['Bounding box may fill hollow openings; review shape strategy'] if strategy=='box' else ['Fixed-body aggregate proxy; surface coverage requires review'] if strategy=='none' and l['visuals'] else [],'provenance':'source CAD' if strategy=='source' else 'generated default'}
     if kind=='field':
         candidates=[(math.prod([l['bounds'][1][i]-l['bounds'][0][i] for i in range(2)]),n) for n,l in description['links'].items() if l['visuals'] and l['bounds'][1][2]-l['bounds'][0][2]<.05]
@@ -206,6 +217,9 @@ def new_profile(urdf, kind, runtime=None):
         for key in e['settings']:p['provenance']['entities/'+pointer(n)+'/settings/'+key]='source CAD' if key in ['joint','actuators'] or key=='mass_kg' and description['links'][n]['mass_kg']>0 else 'generated default'
     for k in p['parameters']:p['provenance']['parameters/'+k]='generated default'
     for k in p['runtime']:p['provenance']['runtime/'+k]='user supplied (captured existing project)'
+    if kind=='robot' and runtime is None:
+        p['runtime']['drive_contacts']={'enabled':True,'min_support_normal_y':.7,'max_contact_gap_m':.003,'rolling_resistance_coefficient':.005}
+        p['provenance']['runtime/drive_contacts']='generated default (native wheel support; review collision geometry)'
     return p
 
 
@@ -216,6 +230,10 @@ def effective_digest(p):return digest(effective(p))
 def validate(p):
     if p.get('schema_version')!=VERSION or p.get('model_kind') not in ['robot','field']:raise ValueError('Unsupported model profile version/type')
     canonical(p);par=p['parameters']
+    if 'drive_contacts' in p['runtime']:
+        c=p['runtime']['drive_contacts']
+        if not isinstance(c.get('enabled'),bool):raise ValueError('drive_contacts.enabled must be true or false')
+        finite(c['min_support_normal_y'],.5,1);finite(c['max_contact_gap_m'],0,.02);finite(c['rolling_resistance_coefficient'],0,1)
     if par['length_unit'] not in ['m','mm','in'] or par['up_axis'] not in ['Z','Y']:raise ValueError('Select length units and up axis')
     if par['floor_strategy'] not in ['source','generated']:raise ValueError('Choose source or generated floor')
     finite(par['floor_thickness_m'],.001,.5);finite(par['floor_margin_m'],0,.02);finite(par['floor_top_m'],-100,100);finite(par['contact_stiffness_n_per_m'],.001,1e30);finite(par['contact_damping_ns_per_m'],0,10000);finite(par['collision_margin_m'],0,.02);finite(par['visual_grid_m'],.00001,.001);finite(par['collision_grid_m'],.00001,.01);finite(par['fallback_mass_kg'],.000001,10000);finite(par['minimum_thickness_m'],.000001,.1)

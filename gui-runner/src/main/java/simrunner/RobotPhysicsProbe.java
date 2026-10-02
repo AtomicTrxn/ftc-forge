@@ -32,6 +32,7 @@ public final class RobotPhysicsProbe {
                 java.util.Set.copyOf(config.drive.motorNames()));
             if(config.robotProfile!=null)config.robotProfile.configure(scene);
             scene.tireContacts = config.tires != null;
+            scene.driveContacts=config.driveContacts;
             scene.flexibleIntake = config.flexibleIntake;
             scene.collisionOmissions = config.collisionOmissions;
             ArticulatedRobot robot = new ArticulatedRobot(scene, world, field, new Vector3f(0, (float) config.startHeightM, 0));

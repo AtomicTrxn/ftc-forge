@@ -149,9 +149,23 @@ public final class GuidedSetupWizard {
             });
         }catch(Exception e){failure(e);}
     }
+    private void wheelSupport() {
+        try {
+            if(parameters!=null)parameters.commit();debounce.stop();
+            String nativeMode="Native wheel contacts (recommended for new setups)",legacyMode="Legacy chassis proxy / wheel ballast";
+            var cfg=FieldPackage.map(profile.get("runtime")).get("drive_contacts");boolean enabled=cfg!=null&&Boolean.TRUE.equals(FieldPackage.map(cfg).get("enabled"));
+            Object selected=JOptionPane.showInputDialog(window,
+                "Native mode needs correctly placed wheel collision shapes touching the floor.\nIt preserves belly scraping and wall friction and cannot drive airborne wheels.\n\nSwitching modes saves a draft and requires collision review.\nReview collision geometry in Physics assumptions; joint axes in Parts and movement.\nTune support normal, contact gap and rolling resistance in Runtime / calibrated settings.",
+                "Wheel support model",JOptionPane.QUESTION_MESSAGE,null,new String[]{nativeMode,legacyMode},enabled?nativeMode:legacyMode);
+            if(selected==null)return;
+            work("Saving wheel support assumptions…",()->{controller.wheelSupport(selected.equals(nativeMode));return null;},()->{
+                motionPhysics="Runtime / calibrated settings";navigate(step);status.setText("Wheel support mode saved. Check wheel collision geometry, run the motion demo and review collisions.");
+            });
+        }catch(Exception e){failure(e);}
+    }
     private void physicsPage() throws Exception {
         profile=controller.session.profile(step.kind());header("Review the physical assumptions","CAD often omits mass and contact properties. Generated values are provisional starting points. Keep them for now or enter known values; saving defaults does not label them measured. Check openings when choosing box shapes. Welded parts share one body's contact material.");
-        var panel=new JPanel(new BorderLayout(8,8));var controls=row();var choices=new ArrayList<String>();choices.add("Shared defaults");if("biobuzz".equals(profile.get("adapter")))choices.add("Authored field contact / mechanism data");else choices.addAll(FieldPackage.map(profile.get("entities")).keySet());choices.add("Runtime / calibrated settings");var select=new JComboBox<>(choices.toArray(String[]::new));controls.add(new JLabel("Settings for:"));controls.add(select);button(controls,"Advanced settings",this::advanced);button(controls,"Open collision preview",this::preview);if(step.kind().equals("robot"))button(controls,"Measure robot and verify motors…",this::measureRobot);panel.add(controls,BorderLayout.NORTH);
+        var panel=new JPanel(new BorderLayout(8,8));var controls=row();var choices=new ArrayList<String>();choices.add("Shared defaults");if("biobuzz".equals(profile.get("adapter")))choices.add("Authored field contact / mechanism data");else choices.addAll(FieldPackage.map(profile.get("entities")).keySet());choices.add("Runtime / calibrated settings");var select=new JComboBox<>(choices.toArray(String[]::new));controls.add(new JLabel("Settings for:"));controls.add(select);button(controls,"Advanced settings",this::advanced);button(controls,"Open collision preview",this::preview);if(step.kind().equals("robot")){button(controls,"Wheel support model…",this::wheelSupport);button(controls,"Measure robot and verify motors…",this::measureRobot);}panel.add(controls,BorderLayout.NORTH);
         if(choices.contains(motionPhysics))select.setSelectedItem(motionPhysics);
         Runnable show=()->{String selected=select.getSelectedItem().toString();Object values;String path;if(selected.equals("Shared defaults")){values=profile.get("parameters");path="parameters";}else if(selected.equals("Runtime / calibrated settings")){values=profile.get("runtime");path="runtime";}else if(selected.startsWith("Authored field")){values=FieldPackage.map(profile.get("runtime")).get("field_manifest");path="runtime/field_manifest";}else {values=FieldPackage.map(FieldPackage.map(profile.get("entities")).get(selected)).get("settings");path="entities/"+pointer(selected)+"/settings";}
             parameters=new GuidedParameterPanel(controller,step.kind(),profile,values,path,"physics",this::changed);panel.add(parameters);panel.revalidate();panel.repaint();};select.addActionListener(e->{if(parameters!=null){parameters.commit();panel.remove(parameters);}show.run();});show.run();var keep=new JCheckBox("I reviewed the assumptions and will keep any remaining defaults provisional.");panel.add(keep,BorderLayout.SOUTH);content.add(panel);leave=()->{parameters.commit();if(!keep.isSelected()&&!controller.session.ready(step.kind()))throw new IllegalArgumentException("Review the assumptions and confirm that remaining defaults are provisional.");};

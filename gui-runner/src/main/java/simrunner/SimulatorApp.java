@@ -321,6 +321,7 @@ public class SimulatorApp extends SimpleApplication {
             System.out.println("[ROBOT VISUAL] unique triangles "+importedScene.sourceVisualTriangles+" -> "+importedScene.preparedVisualTriangles+"; grid="+(simConfig.field.fullDetail()?0:.0005)+"m, vertex movement <=0.4331mm; collision and inertia use original CAD.");
             if(simConfig.robotProfile!=null)simConfig.robotProfile.configure(importedScene);
             importedScene.tireContacts = simConfig.tires != null;
+            importedScene.driveContacts=simConfig.driveContacts;
             importedScene.flexibleIntake = simConfig.flexibleIntake;
             importedScene.collisionOmissions=simConfig.collisionOmissions;
             var collisionAudit=CollisionAudit.inspect(importedScene);

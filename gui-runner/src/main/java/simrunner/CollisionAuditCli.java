@@ -15,7 +15,8 @@ public final class CollisionAuditCli {
         Path source=project.resolve(config.urdf);
         var drive=config.drive==null?Set.of("left_front_drive","right_front_drive","left_back_drive","right_back_drive"):Set.copyOf(config.drive.motorNames());
         var scene=new ImportedRobotScene(RobotUrdf.parse(source),source,new HardwareMap(),new DesktopAssetManager(true),config.vhacdMaxHulls,drive,.0005f);
-        scene.tireContacts=config.tires!=null;scene.flexibleIntake=config.flexibleIntake;scene.collisionOmissions=config.collisionOmissions;
+        scene.tireContacts=config.tires!=null;scene.flexibleIntake=config.flexibleIntake;
+        if(config.robotProfile!=null)config.robotProfile.configure(scene);scene.driveContacts=config.driveContacts;scene.collisionOmissions=config.collisionOmissions;
         var audit=CollisionAudit.inspect(scene);audit.write(Path.of(args[1]),source);
         System.out.println("[COLLISION AUDIT] "+audit.summary()+" | report="+Path.of(args[1]).toAbsolutePath());
         audit.requireUsable();

@@ -81,6 +81,7 @@ final class RobotMotionDemo implements AutoCloseable {
         try {
             scene=new ImportedRobotScene(setup.urdf,setup.profile.artifact("robot"),setup.hardware,assets,setup.config.vhacdMaxHulls,setup.plan.driveNames);
             setup.profile.configure(scene);scene.tireContacts=setup.config.tires!=null;scene.flexibleIntake=setup.config.flexibleIntake;
+            scene.driveContacts=setup.config.driveContacts;
             CollisionAudit.inspect(scene).requireUsable();
             robot=new ArticulatedRobot(scene,world,root,new Vector3f(0,(float)setup.config.startHeightM,0),setup.config.servoPhysics);
             // Lift the whole assembly together to the neutral floor, retaining all joint frames.
@@ -175,12 +176,13 @@ final class RobotMotionDemo implements AutoCloseable {
             double sign=a.drive.turn()!=0?a.drive.turn():a.drive.left()!=0?a.drive.left():a.drive.forward();
             moved=Math.abs(value)>(a.drive.turn()!=0?.02:.005);correct=value*sign>0;
             row.put("forward_m",(double)local.x);row.put("left_m",(double)-local.z);row.put("yaw_rad",yaw);
+            if(world.driveContacts()!=null){var support=world.driveContacts().snapshot();row.put("supported_wheels",support.wheels().size());row.put("scraping_contacts",support.scrapingContacts());row.put("support_diagnosis",support.diagnosis());}
         } else {
             double q=robot.jointPosition(a.mechanism.joint().name());double value=q-startJoint;
             moved=peakJoint>(a.mechanism.joint().type().equals("prismatic")?.002:.01);correct=(a.target-startJoint)*value>=0;
             row.put("start",startJoint);row.put("end",q);row.put("target",a.target);row.put("peak_travel",peakJoint);row.put("unit",a.mechanism.joint().type().equals("prismatic")?"m":"rad");
         }
-        row.put("outcome",!moved?"no clear movement":correct?"movement observed":"unexpected direction");row.put("detail",!moved?"Inspect bindings, limits, gearing, contact and motor effort.":correct?"Compare this movement with your expected physical robot.":"Check axes, signs, gearing and bindings.");observations.add(row);
+        row.put("outcome",!moved?"no clear movement":correct?"movement observed":"unexpected direction");row.put("detail",!moved?row.getOrDefault("support_diagnosis","Inspect bindings, limits, gearing, contact and motor effort."):correct?"Compare this movement with your expected physical robot.":"Check axes, signs, gearing and bindings.");observations.add(row);
     }
     Map<String,Object> report(){var report=new LinkedHashMap<String,Object>();report.put("schema_version",2);report.put("run_id",runId);report.put("selection",selection);report.put("model_digest",setup.profile.digest);report.put("context",setup.context);report.put("hardware",setup.hardwareLabel);report.put("complete",finished&&!stopped);report.put("status",failure.isEmpty()?stopped?"stopped":finished?"finished":"running":"needs attention");report.put("observations",List.copyOf(observations));report.put("notes",setup.plan.notes);report.put("scope","Scripted native motion observations; not collision review or measured physical accuracy.");return report;}
     String status(){return failure.isEmpty()?finished?stopped?"Stopped":"Demo complete":paused?"Paused":action()==null?"Settling on the demo floor":action().label:failure;}

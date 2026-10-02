@@ -66,6 +66,11 @@ final class RobotMotionReview {
         entries(profile).forEach((id,value)->{var entry=new LinkedHashMap<String,Object>(object(value));if(group.isEmpty()||group.equals(entry.get("group")))entry.put("retest_required",true);entries.put(id,entry);});
         result.put("schema_version",1);result.put("entries",entries);return result;
     }
+    static String contactSummary(Map<String,Object> observation) {
+        if(!observation.containsKey("supported_wheels"))return "";
+        return "\nSupported wheels: "+observation.get("supported_wheels")+" · chassis support contacts: "+observation.get("scraping_contacts")
+            +"\n"+observation.getOrDefault("support_diagnosis","");
+    }
     static String travel(Map<String,Object> o){
         if(o.containsKey("forward_m"))return String.format(Locale.ROOT,"Forward %.3f m · left %.3f m · turn %.1f°",FieldPackage.num(o,"forward_m"),FieldPackage.num(o,"left_m"),Math.toDegrees(FieldPackage.num(o,"yaw_rad")));
         if(o.containsKey("start"))return String.format(Locale.ROOT,"%.3f → %.3f %s; target %.3f %s",FieldPackage.num(o,"start"),FieldPackage.num(o,"end"),o.get("unit"),FieldPackage.num(o,"target"),o.get("unit"));

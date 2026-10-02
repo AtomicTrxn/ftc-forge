@@ -67,6 +67,8 @@ final class GuidedParameterPanel extends JPanel {
             case "role"->"Part behavior";case "mechanicalReduction"->"Motor-to-joint ratio";case "name"->"Motor / servo name";
             case "collision_margin_m"->"Collision skin thickness (m)";case "max_hulls"->"Maximum convex pieces";case "field_half_extents_m"->"Field half-widths (m)";
             case "use_contact_compliance"->"Use compliant contact";case "material_override"->"Use this body's contact values";
+            case "enabled"->path.contains("/drive_contacts/")?"Use native wheel support contacts":"Enabled";
+            case "min_support_normal_y"->"Minimum upward support normal (0.5–1)";case "max_contact_gap_m"->"Maximum wheel contact gap (m)";case "rolling_resistance_coefficient"->"Wheel rolling resistance coefficient";
             default->Character.toUpperCase(key.charAt(0))+key.substring(1).replace('_',' ');
         };
         String tail=path.substring(path.lastIndexOf('/')+1);if(tail.matches("[0-9]+")){int i=Integer.parseInt(tail);String[] axes=key.contains("rpy")?new String[]{"roll","pitch","yaw"}:new String[]{"X","Y","Z"};text+=" · "+(i<3?axes[i]:"component "+(i+1));}return text;
@@ -76,6 +78,10 @@ final class GuidedParameterPanel extends JPanel {
         case "mass_mode"->"Use CAD mass, your override, or the saved missing-mass default.";
         case "inertia_mode"->"Rotational resistance: preserve CAD, derive from a box, or supply a tensor.";
         case "friction"->"Higher values resist sliding. CAD normally does not measure this.";
+        case "enabled"->path.contains("/drive_contacts/")?"Wheel collision shapes support the robot. The drive solver owns wheel/floor tangential response; chassis scrapes and wall friction remain native. Disabling restores legacy wheel ballast/proxy drive and requires collision review.":"Saved with this model.";
+        case "min_support_normal_y"->"Only upward-facing static contacts supply traction. Allowed cutoff: 0.5–1; 1 accepts horizontal support. 0.7 is provisional. Walls and moving supports do not supply drive traction.";
+        case "max_contact_gap_m"->"Accept persistent wheel contacts only within this separation. Review actual wheel geometry and belly clearance before increasing it; it does not create missing contacts.";
+        case "rolling_resistance_coefficient"->"Aggregate-drive translation resistance is this fraction of wheel normal load. Tire mode uses its own tire force model. Native wheel-floor sliding friction is replaced by the drive solver, capped by saved material grip. CAD does not measure rolling resistance.";
         case "restitution","fixed_restitution"->"Bounce fraction: 0 is no bounce, 1 is fully elastic.";
         case "role"->"Pieces move independently; decoration/reference parts do not collide.";
         case "type"->"Fixed moves with its parent; continuous rotates freely; revolute/slider use limits.";

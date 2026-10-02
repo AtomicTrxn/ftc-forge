@@ -20,6 +20,11 @@ final class CollisionAudit {
         scene.groupParts();
         List<Link> links=new ArrayList<>();List<Body> bodies=new ArrayList<>();List<String> errors=new ArrayList<>();
         Set<String> owners=new TreeSet<>(scene.owners.values());
+        if(scene.wheelContactsEnabled())for(String joint:new TreeSet<>(scene.wheelJoints.values())) {
+            var members=scene.wheelJoints.entrySet().stream().filter(e->e.getValue().equals(joint)).map(Map.Entry::getKey).toList();
+            if(members.stream().anyMatch(n->!scene.owners.get(n).equals(scene.urdf.rootLink)))errors.add("Drive wheel '"+joint+"' must belong to the welded chassis for native support. Review its parent joints.");
+            if(members.stream().allMatch(n->scene.urdf.links.get(n).collisions().isEmpty()))errors.add("Drive wheel '"+joint+"' needs reviewed collision geometry for native support.");
+        }
         for(var omission:scene.collisionOmissions.entrySet()) {
             if(!owners.contains(omission.getKey()))errors.add("Unknown rigid body in collision_omissions: "+omission.getKey());
             if(omission.getValue()==null || omission.getValue().isBlank())errors.add("Collision omission requires a reason: "+omission.getKey());
@@ -27,7 +32,7 @@ final class CollisionAudit {
         }
         for(String owner:owners) {
             var members=scene.urdf.links.keySet().stream().filter(n->scene.owners.get(n).equals(owner)).sorted().toList();
-            int count=members.stream().filter(n->!scene.wheelLinks.contains(n)).mapToInt(n->scene.urdf.links.get(n).collisions().size()).sum();
+            int count=members.stream().filter(n->scene.wheelContactsEnabled()||!scene.wheelLinks.contains(n)).mapToInt(n->scene.urdf.links.get(n).collisions().size()).sum();
             String reason=scene.collisionOmissions.get(owner);
             String status=count>0?"declared":reason==null?"missing":"intentional_noncontact";
             if(count==0 && reason==null)errors.add("Rigid body '"+owner+"' has no effective collision geometry. Add shapes to it or its fixed children; use previewRobot and auditCollisions to review the import.");
@@ -35,7 +40,9 @@ final class CollisionAudit {
             bodies.add(new Body(owner,count,members,status,reason));
             for(String name:members) {
                 RobotUrdf.Link link=scene.urdf.links.get(name);String treatment;
-                if(scene.wheelLinks.contains(name))treatment=scene.tireContacts?"tire_contact_model":"drive_wheel_ballast";
+                if(scene.wheelLinks.contains(name)) {
+                    treatment=scene.wheelContactsEnabled()?"native_drive_wheel_contacts":scene.tireContacts?"tire_contact_model":"drive_wheel_ballast";
+                }
                 else if(scene.flexibleIntake!=null && scene.flexibleIntake.links().contains(name))treatment="flexible_contacts_plus_rigid_proxy";
                 else if(!link.collisions().isEmpty())treatment="declared_on_link";
                 else if(link.visuals().isEmpty())treatment="assembly_or_inertial_frame";
