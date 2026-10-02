@@ -14,6 +14,7 @@ import java.util.*;
 /** Import-time scripted physics demonstration. Report is separate from model review evidence. */
 public final class RobotMotionDemoApp extends SimpleApplication {
     private Path file,project,report;
+    private String selection="";
     private RobotMotionDemo demo;
     private CollisionOverlay overlay;
     private com.jme3.input.ChaseCamera orbit;
@@ -22,20 +23,21 @@ public final class RobotMotionDemoApp extends SimpleApplication {
     private boolean cad=true,reported;
     private String error="";
     public static void main(String[] args)throws Exception {
-        if(args.length<3||args.length>4)throw new IllegalArgumentException("Usage: RobotMotionDemoApp <profile.json> <project|-> <report.json> [--headless]");
+        if(args.length<3)throw new IllegalArgumentException("Usage: RobotMotionDemoApp <profile.json> <project|-> <report.json> [--headless] [--only <movement group>]");
+        boolean headless=false;String selection="";
+        for(int i=3;i<args.length;i++){if(args[i].equals("--headless"))headless=true;else if(args[i].equals("--only")&&i+1<args.length&&selection.isEmpty())selection=args[++i];else throw new IllegalArgumentException("Unknown or incomplete option: "+args[i]);}
         Path file=Path.of(args[0]).toAbsolutePath(),project=args[1].equals("-")?null:Path.of(args[1]).toAbsolutePath(),report=Path.of(args[2]).toAbsolutePath();
         if(!report.getFileName().toString().endsWith(".json")||report.normalize().startsWith(file.getParent().normalize())||Files.isSymbolicLink(report))throw new IllegalArgumentException("Demo report must be a separate session .json file outside the model directory.");
-        if(args.length==4) {
-            if(!args[3].equals("--headless"))throw new IllegalArgumentException("Unknown option: "+args[3]);
+        if(headless) {
             NativeLibraryLoader.loadNativeLibrary("bulletjme",true);
             boolean reportWritten=false;
-            try(var demo=new RobotMotionDemo(RobotMotionDemo.setup(file,project),new DesktopAssetManager(true))) {
+            try(var demo=new RobotMotionDemo(RobotMotionDemo.setup(file,project),new DesktopAssetManager(true),selection)) {
                 while(!demo.finished())demo.tick();ProfileIO.save(report,demo.report());reportWritten=true;System.out.println("[MOTION DEMO] "+ProfileIO.json(demo.report()));
                 if(!demo.failure.isEmpty())throw new IllegalStateException(demo.failure);
             }catch(Exception e){if(!reportWritten)ProfileIO.save(report,Map.of("status","needs attention","error",e.getMessage()==null?e.toString():e.getMessage()));throw e;}
             return;
         }
-        var app=new RobotMotionDemoApp();app.file=file;app.project=project;app.report=report;
+        var app=new RobotMotionDemoApp();app.file=file;app.project=project;app.report=report;app.selection=selection;
         var settings=new com.jme3.system.AppSettings(true);settings.setTitle("FTC Forge — robot motion demo");settings.setResolution(1280,800);settings.setFrameRate(60);app.setSettings(settings);app.setShowSettings(false);app.setPauseOnLostFocus(false);app.start();
     }
     public void simpleInitApp() {
@@ -48,7 +50,7 @@ public final class RobotMotionDemoApp extends SimpleApplication {
     private void load() {
         try {
             if(demo!=null){demo.root.removeFromParent();demo.close();demo=null;}if(overlay!=null){overlay.root.removeFromParent();overlay=null;}
-            var fresh=new RobotMotionDemo(RobotMotionDemo.setup(file,project),assetManager);demo=fresh;
+            var fresh=new RobotMotionDemo(RobotMotionDemo.setup(file,project),assetManager,selection);demo=fresh;
             // Construction updates detached nodes. Local lights refresh their cached light lists on first load.
             demo.root.addLight(new com.jme3.light.AmbientLight(new ColorRGBA(.6f,.6f,.6f,1)));
             demo.root.addLight(new com.jme3.light.DirectionalLight(new Vector3f(-1,-2,-1).normalizeLocal(),ColorRGBA.White));

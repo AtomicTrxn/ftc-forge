@@ -85,10 +85,18 @@ public final class MiniJson {
                 switch (esc) {
                     case 'n': sb.append('\n'); break;
                     case 't': sb.append('\t'); break;
+                    case 'r': sb.append('\r'); break;
+                    case 'b': sb.append('\b'); break;
+                    case 'f': sb.append('\f'); break;
+                    case 'u':
+                        if(pos+4>=s.length())throw new IllegalArgumentException("Incomplete Unicode escape at "+pos);
+                        int code=0;
+                        for(int i=1;i<=4;i++){int digit=Character.digit(s.charAt(pos+i),16);if(digit<0)throw new IllegalArgumentException("Invalid Unicode escape at "+pos);code=code*16+digit;}
+                        sb.append((char)code);pos+=4;break;
                     case '"': sb.append('"'); break;
                     case '\\': sb.append('\\'); break;
                     case '/': sb.append('/'); break;
-                    default: sb.append(esc);
+                    default: throw new IllegalArgumentException("Invalid JSON escape at "+pos);
                 }
             } else {
                 sb.append(c);

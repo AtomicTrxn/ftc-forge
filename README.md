@@ -25,7 +25,7 @@ Prepare new robot and field URDF/STL ZIPs with `./gradlew :gui-runner:prepareMod
 
 The [robot measurement guide](gui-runner/ROBOT_MEASUREMENTS.md) adds operating weight, wheel diameter/spacing and motor-binding instructions to guided setup. Selected measurements use kg/lb or mm/cm/in and are saved with the robot profile; changed settings require renewed model review.
 
-Guided robot setup also offers a [short motion demo](gui-runner/ROBOT_MOTION_DEMO.md): differential/tank forward, reverse and turns; configured Mecanum adds strafing. Powered mechanisms move separately through native physics, with measured travel and setup diagnostics to compare against the real robot.
+Guided robot setup also offers a [short motion demo](gui-runner/ROBOT_MOTION_DEMO.md): differential/tank forward, reverse and turns; configured Mecanum adds strafing. Powered mechanisms move separately through native physics. Assess each observed movement, follow a selectable correction path and retest only that movement/mechanism. Explicit feedback travels with exported robot settings; changed CAD/settings/hardware require fresh review.
 
 Imported robot collision coverage is checked per rigid body before physics starts. The selector's **Review collisions** action shows actual native shapes for the selected robot and field; C toggles collision shapes and V toggles CAD visibility. Save a coverage report with `./gradlew :gui-runner:auditCollisions --args='/absolute/robotProject /absolute/report.json'`. See [collision review](gui-runner/COLLISION_REVIEW.md).
 

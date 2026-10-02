@@ -11,7 +11,8 @@ import simcore.*;
 final class GuidedSetupController {
     final ModelEditorController models;
     GuidedSetupSession session;
-    private Process previewProcess;private Path previewPath;Path lastLog;
+    private Process previewProcess,motionProcess;private Path previewPath;Path lastLog;
+    private String motionPreviousRun="";
     GuidedSetupController(Path library, Path project) throws Exception {
         models=new ModelEditorController(library);session=new GuidedSetupSession(library);
         if(project!=null)session.data.put("project",project.toRealPath().toString());session.save();
@@ -58,9 +59,44 @@ final class GuidedSetupController {
     Path motionReport(){return session.file.getParent().resolve("motion-demos").resolve(session.file.getFileName());}
     void continueAfterMotion() throws Exception {session.acknowledge(new GuidedSetupSession.Step("robot","motion"));}
     RobotMotionDemo.Setup motionSetup() throws Exception {compile("robot");return RobotMotionDemo.setup(session.modelPath("robot"),session.project());}
-    void motionDemo() throws Exception {
+    void motionDemo() throws Exception {motionDemo("");}
+    void motionDemo(String group) throws Exception {
+        if(motionProcess!=null&&motionProcess.isAlive()) {
+            var report=Files.isRegularFile(motionReport())?MiniJson.parseObject(Files.readString(motionReport())):Map.<String,Object>of();
+            if(!completedNewMotionReport(motionPreviousRun,report))throw new IllegalArgumentException("A motion demo is still running. Close it with Esc before launching a retest, or use R to replay that window.");
+            motionProcess.destroy();
+            if(!motionProcess.waitFor(3,java.util.concurrent.TimeUnit.SECONDS))throw new IllegalArgumentException("Close the previous demo with Esc before launching a retest.");
+        }
+        prepareMotionRetest(group);
+        motionPreviousRun=Files.isRegularFile(motionReport())?String.valueOf(MiniJson.parseObject(Files.readString(motionReport())).getOrDefault("run_id","")):"";
+        var args=new ArrayList<>(List.of(session.modelPath("robot").toString(),session.project()==null?"-":session.project().toString(),motionReport().toString()));if(!group.isEmpty())args.addAll(List.of("--only",group));
+        motionProcess=ModelEditorController.javaProcess(RobotMotionDemoApp.class,args,true);
+    }
+    static boolean completedNewMotionReport(String previous,Map<String,Object> report) {
+        return report.get("run_id") instanceof String run&&!run.isBlank()&&!run.equals(previous)&&Boolean.TRUE.equals(report.get("complete"))&&"finished".equals(report.get("status"));
+    }
+    void prepareMotionRetest(String group) throws Exception {
         var setup=motionSetup();if(setup.plan().empty())throw new IllegalArgumentException(setup.plan().summary());
-        ModelEditorController.javaProcess(RobotMotionDemoApp.class,List.of(session.modelPath("robot").toString(),session.project()==null?"-":session.project().toString(),motionReport().toString()),true);
+        if(!group.isEmpty()&&setup.plan().items().stream().noneMatch(i->i.group().equals(group)))throw new IllegalArgumentException("This movement is no longer configured. Choose a current movement to retest.");
+        if(!RobotMotionReview.entries(setup.profile().data).isEmpty())persistMotionReview(RobotMotionReview.requireRetest(setup.profile().data,group));
+    }
+    RobotMotionReview.Snapshot motionReview() throws Exception {return RobotMotionReview.read(motionSetup(),Files.isRegularFile(motionReport())?MiniJson.parseObject(Files.readString(motionReport())):Map.of());}
+    void saveMotionReviews(RobotMotionReview.Snapshot expected,Map<String,String> choices,Map<String,String> notes)throws Exception {
+        if(choices.isEmpty())return;
+        var current=motionReview();if(!expected.setup().context().equals(current.setup().context()))throw new IllegalArgumentException("Model or hardware changed. Reopen the movement review and retest before saving.");
+        for(String id:choices.keySet()) {
+            var before=expected.rows().stream().filter(r->r.item().id().equals(id)).findFirst().orElseThrow();
+            var now=current.rows().stream().filter(r->r.item().id().equals(id)).findFirst().orElseThrow();
+            if(!before.runId().equals(now.runId())||!GuidedSetupSession.hash(before.observation()).equals(GuidedSetupSession.hash(now.observation())))throw new IllegalArgumentException("A newer demo changed these observations. Reopen the movement review before saving.");
+        }
+        persistMotionReview(RobotMotionReview.assess(current,choices,notes));
+    }
+    private void persistMotionReview(Map<String,Object> review)throws Exception {
+        boolean ready=session.ready("robot");Path path=session.modelPath("robot");
+        if(path.toString().contains("/revisions/"))path=Path.of(models.run("edit",path.toString(),models.library.toString()).toString());
+        var data=MiniJson.parseObject(Files.readString(path));data.put("motion_review",review);ProfileIO.save(path,data);models.run("compile",path.toString());
+        if(ready)path=Path.of(models.run("save",path.toString(),models.library.toString(),"--reviewed").toString());
+        session.select("robot",path);
     }
     String motionResults() throws Exception {
         if(!Files.isRegularFile(motionReport()))return "No demo observations yet. Run the demo, then return here to view results.";

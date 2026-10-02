@@ -27,6 +27,7 @@ public final class GuidedSetupWizard {
     private long generation;
     private final Map<Component,Boolean> enabledStates=new IdentityHashMap<>();
     private String diagnostics="";
+    private String motionGroup="",motionHint="",motionPart="",motionPhysics="";
     private final javax.swing.Timer debounce=new javax.swing.Timer(900,e->compileChanges());
     private Runnable leave=()->{};
     @FunctionalInterface private interface Task {Object run() throws Exception;}
@@ -52,6 +53,11 @@ public final class GuidedSetupWizard {
     private void header(String title,String text){
         var panel=new JPanel(new BorderLayout(0,10));var label=new JLabel(title);label.setFont(label.getFont().deriveFont(Font.BOLD,23f));panel.add(label,BorderLayout.NORTH);
         instructions.setText(text);instructions.setEditable(false);instructions.setOpaque(false);instructions.setLineWrap(true);instructions.setWrapStyleWord(true);instructions.setRows(4);instructions.setFont(label.getFont().deriveFont(14f));panel.add(instructions);content.add(panel,BorderLayout.NORTH);
+        if(!motionGroup.isEmpty()&&step.kind().equals("robot")&&Set.of("parts","physics").contains(step.page())) {
+            var correction=new JPanel(new BorderLayout(6,6));var hint=new JTextArea(motionHint,3,70);hint.setEditable(false);hint.setLineWrap(true);hint.setWrapStyleWord(true);correction.add(new JScrollPane(hint));var actions=row();
+            button(actions,"Retest this movement…",()->{try{if(parameters!=null)parameters.commit();work("Preparing the correction and launching a targeted retest…",()->{controller.motionDemo(motionGroup);return null;},()->{navigate(new GuidedSetupSession.Step("robot","motion"));status.setText("Targeted retest opened. Close it with Esc, then review the new observations.");});}catch(Exception e){failure(e);}});
+            button(actions,"Return to movement review",()->{try{if(parameters!=null)parameters.commit();navigate(new GuidedSetupSession.Step("robot","motion"));motionResults();}catch(Exception e){failure(e);}});correction.add(actions,BorderLayout.SOUTH);panel.add(correction,BorderLayout.SOUTH);
+        }
     }
     private JPanel column(){var p=new JPanel();p.setLayout(new BoxLayout(p,BoxLayout.Y_AXIS));return p;}
     private JPanel row(){return new JPanel(new GridLayout(0,2,8,6)){@Override public Dimension getMaximumSize(){return new Dimension(Integer.MAX_VALUE,getPreferredSize().height);}};}
@@ -107,7 +113,7 @@ public final class GuidedSetupWizard {
         content.add(p);
     }
     private void importCAD(String kind){Path zip=choose("Choose "+kind+" URDF/STL ZIP",false,false);if(zip==null)return;Object answer=JOptionPane.showInputDialog(window,"Should this CAD reuse earlier settings?","Import settings",JOptionPane.QUESTION_MESSAGE,null,new String[]{"Reuse identical saved CAD automatically","Choose earlier settings for changed CAD","Generate fresh defaults"},"Reuse identical saved CAD automatically");if(answer==null)return;Path reuse=answer.toString().startsWith("Choose")?revision(kind):null;if(answer.toString().startsWith("Choose")&&reuse==null)return;load(kind,answer.toString().startsWith("Generate")?"fresh":"cad",zip,reuse);}
-    private void load(String kind,String operation,Path input,Path reuse){work("Reading source and preparing geometry…",()->{controller.load(kind,operation,input,reuse);return null;},()->{status.setText("Model loaded. Review its summary, then choose Next.");navigate(step);});}
+    private void load(String kind,String operation,Path input,Path reuse){work("Reading source and preparing geometry…",()->{controller.load(kind,operation,input,reuse);return null;},()->{motionGroup="";motionPart="";motionPhysics="";status.setText("Model loaded. Review its summary, then choose Next.");navigate(step);});}
     private void scalePage() throws Exception {
         profile=controller.session.profile(step.kind());header("Check size and orientation","Compare the dimensions with your actual model. A 45 cm robot should not appear as 0.45 mm or 450 m. Choose source units before tuning physical dimensions. The preview uses actual meters, a grid and labeled coordinate directions.");
         var p=new JPanel(new BorderLayout(8,8));var controls=column();var r=row();var units=new JComboBox<>(new String[]{"m","mm","in"});units.setSelectedItem(FieldPackage.map(profile.get("parameters")).get("length_unit"));r.add(new JLabel("Source length units:"));r.add(units);button(r,"Apply units",()->work("Converting source dimensions…",()->{controller.units(step.kind(),units.getSelectedItem().toString());return null;},()->navigate(step)));button(r,"Open size / collision preview",()->preview());controls.add(r);
@@ -123,6 +129,7 @@ public final class GuidedSetupWizard {
         if("biobuzz".equals(profile.get("adapter"))){p.add(new JLabel("Captured BIOBUZZ: authored structure, loose pieces and passive HIVES are preserved. Review actual contact parameters in Physics assumptions."));}
         else {
             var names=FieldPackage.map(profile.get("entities")).keySet().toArray(String[]::new);var select=new JComboBox<>(names);var panel=new JPanel(new BorderLayout());var actions=row();actions.add(new JLabel("Part:"));actions.add(select);button(actions,"Focus this body",()->{try{controller.focus(select.getSelectedItem().toString());preview();}catch(Exception e){failure(e);}});button(actions,"Bind motor / servo…",()->bind(select.getSelectedItem().toString()));if(step.kind().equals("robot")){button(actions,"Add differential drive…",()->runtime(true));button(actions,"Add motor intake…",()->runtime(false));}panel.add(actions,BorderLayout.NORTH);
+            if(Arrays.asList(names).contains(motionPart))select.setSelectedItem(motionPart);
             Runnable showPart=()->{String name=select.getSelectedItem().toString();Object settings=FieldPackage.map(FieldPackage.map(profile.get("entities")).get(name)).get("settings");parameters=new GuidedParameterPanel(controller,step.kind(),profile,settings,"entities/"+pointer(name)+"/settings","parts",this::changed);panel.add(parameters);panel.revalidate();panel.repaint();};select.addActionListener(e->{if(parameters!=null){parameters.commit();panel.remove(parameters);}showPart.run();});showPart.run();p.add(panel);
         }
         content.add(p);leave=()->{if(parameters!=null)parameters.commit();};
@@ -145,6 +152,7 @@ public final class GuidedSetupWizard {
     private void physicsPage() throws Exception {
         profile=controller.session.profile(step.kind());header("Review the physical assumptions","CAD often omits mass and contact properties. Generated values are provisional starting points. Keep them for now or enter known values; saving defaults does not label them measured. Check openings when choosing box shapes. Welded parts share one body's contact material.");
         var panel=new JPanel(new BorderLayout(8,8));var controls=row();var choices=new ArrayList<String>();choices.add("Shared defaults");if("biobuzz".equals(profile.get("adapter")))choices.add("Authored field contact / mechanism data");else choices.addAll(FieldPackage.map(profile.get("entities")).keySet());choices.add("Runtime / calibrated settings");var select=new JComboBox<>(choices.toArray(String[]::new));controls.add(new JLabel("Settings for:"));controls.add(select);button(controls,"Advanced settings",this::advanced);button(controls,"Open collision preview",this::preview);if(step.kind().equals("robot"))button(controls,"Measure robot and verify motors…",this::measureRobot);panel.add(controls,BorderLayout.NORTH);
+        if(choices.contains(motionPhysics))select.setSelectedItem(motionPhysics);
         Runnable show=()->{String selected=select.getSelectedItem().toString();Object values;String path;if(selected.equals("Shared defaults")){values=profile.get("parameters");path="parameters";}else if(selected.equals("Runtime / calibrated settings")){values=profile.get("runtime");path="runtime";}else if(selected.startsWith("Authored field")){values=FieldPackage.map(profile.get("runtime")).get("field_manifest");path="runtime/field_manifest";}else {values=FieldPackage.map(FieldPackage.map(profile.get("entities")).get(selected)).get("settings");path="entities/"+pointer(selected)+"/settings";}
             parameters=new GuidedParameterPanel(controller,step.kind(),profile,values,path,"physics",this::changed);panel.add(parameters);panel.revalidate();panel.repaint();};select.addActionListener(e->{if(parameters!=null){parameters.commit();panel.remove(parameters);}show.run();});show.run();var keep=new JCheckBox("I reviewed the assumptions and will keep any remaining defaults provisional.");panel.add(keep,BorderLayout.SOUTH);content.add(panel);leave=()->{parameters.commit();if(!keep.isSelected()&&!controller.session.ready(step.kind()))throw new IllegalArgumentException("Review the assumptions and confirm that remaining defaults are provisional.");};
     }
@@ -159,7 +167,17 @@ public final class GuidedSetupWizard {
         work("Reading configured drivetrain and mechanisms…",()->{try{var setup=controller.motionSetup();SwingUtilities.invokeLater(()->summary.setText(setup.hardwareLabel()+"\n\n"+setup.plan().summary()+"\n\nSpace pauses, S stops, R replays; Esc closes. The neutral demo floor is separate from your field scene. Native contacts can block movement. Compare each visible result with your actual robot.\n\nYou may choose Next and return later if hardware mapping is deferred. Collision review still follows this step."));}catch(Exception e){SwingUtilities.invokeLater(()->summary.setText("Motion setup needs attention: "+friendly(e)+"\n\nCorrect Parts / Physics assumptions, or choose Next and return later. You can still inspect CAD in the collision preview."));}return null;},()->status.setText("Run the demo and compare movements; Next continues to collision review."));
     }
     private void motionDemo(){work("Launching the robot motion demo…",()->{controller.motionDemo();return null;},()->status.setText("Motion demo opened. Watch the movements; return to View demo results afterward."));}
-    private void motionResults(){String[] result=new String[1];work("Reading motion observations…",()->{result[0]=controller.motionResults();return null;},()->{var text=new JTextArea(result[0],20,85);text.setEditable(false);text.setLineWrap(true);text.setWrapStyleWord(true);JOptionPane.showMessageDialog(window,new JScrollPane(text),"Robot motion observations",JOptionPane.INFORMATION_MESSAGE);});}
+    private void motionResults(){RobotMotionReview.Snapshot[] result=new RobotMotionReview.Snapshot[1];work("Reading motion observations and saved reviews…",()->{result[0]=controller.motionReview();return null;},()->{
+        var decision=RobotMotionReviewDialog.show(window,result[0]);if(decision==null)return;
+        work("Saving explicit assessments and preparing the next action…",()->{
+            controller.saveMotionReviews(result[0],decision.choices(),decision.notes());
+            if(decision.action().equals("retest"))controller.motionDemo(decision.row().item().group());
+            if(decision.action().equals("correct"))controller.edit("robot");return null;
+        },()->{
+            if(decision.action().equals("correct")){motionGroup=decision.row().item().group();motionPart=decision.part();motionPhysics=decision.correction()==RobotMotionReview.Correction.COLLISION?motionPart:"Runtime / calibrated settings";motionHint=RobotMotionReview.advice(decision.row(),decision.correction());navigate(new GuidedSetupSession.Step("robot",decision.correction().page));}
+            else {navigate(step);status.setText(decision.action().equals("retest")?"Targeted retest opened. Close with Esc, then review the new observations.":"Explicit movement assessments saved with this robot profile.");}
+        });
+    });}
     private void changed(){try{controller.update(step.kind(),profile);debounce.restart();status.setText("Draft saved. Preparing the edited values shortly…");}catch(Exception e){failure(e);}}
     private void compileChanges(){if(busy||profile==null)return;work("Preparing edited settings…",()->{controller.compile(step.kind());return null;},()->status.setText("Edits prepared. Preview will reload; complete the required review."));}
     private void compileAndReload(){work("Preparing changed settings…",()->{controller.compile(step.kind());return null;},()->navigate(step));}
