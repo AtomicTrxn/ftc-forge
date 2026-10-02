@@ -12,7 +12,7 @@ final class GuidedSetupSession {
         String label() { return (kind.isEmpty() ? "" : Character.toUpperCase(kind.charAt(0)) + kind.substring(1) + " · ") + switch(page) {
             case "start" -> "Choose setup"; case "source" -> "Choose model";
             case "scale" -> "Size and orientation"; case "parts" -> "Parts and movement";
-            case "physics" -> "Physics assumptions"; case "review" -> "Review and save";
+            case "physics" -> "Physics assumptions"; case "motion" -> "Motion demo"; case "review" -> "Review and save";
             case "scene" -> "Arrange scene"; default -> "Finish and use";
         }; }
     }
@@ -68,7 +68,7 @@ final class GuidedSetupSession {
     List<Step> steps() {
         var out=new ArrayList<Step>();out.add(new Step("","start"));
         for(String kind:goal().equals("simulation")?List.of("robot","field"):goal().isEmpty()?List.<String>of():List.of(goal()))
-            for(String page:List.of("source","scale","parts","physics","review"))out.add(new Step(kind,page));
+            for(String page:kind.equals("robot")?List.of("source","scale","parts","physics","motion","review"):List.of("source","scale","parts","physics","review"))out.add(new Step(kind,page));
         if(goal().equals("simulation"))out.add(new Step("","scene"));out.add(new Step("","finish"));return out;
     }
     String token(Step step) throws Exception {

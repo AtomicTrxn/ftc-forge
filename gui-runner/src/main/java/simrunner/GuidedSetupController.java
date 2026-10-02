@@ -55,6 +55,28 @@ final class GuidedSetupController {
         session.data.put("scene_validation",null);session.data.remove("project_check");session.data.remove("opmodes");session.save();
         compile("robot");
     }
+    Path motionReport(){return session.file.getParent().resolve("motion-demos").resolve(session.file.getFileName());}
+    void continueAfterMotion() throws Exception {session.acknowledge(new GuidedSetupSession.Step("robot","motion"));}
+    RobotMotionDemo.Setup motionSetup() throws Exception {compile("robot");return RobotMotionDemo.setup(session.modelPath("robot"),session.project());}
+    void motionDemo() throws Exception {
+        var setup=motionSetup();if(setup.plan().empty())throw new IllegalArgumentException(setup.plan().summary());
+        ModelEditorController.javaProcess(RobotMotionDemoApp.class,List.of(session.modelPath("robot").toString(),session.project()==null?"-":session.project().toString(),motionReport().toString()),true);
+    }
+    String motionResults() throws Exception {
+        if(!Files.isRegularFile(motionReport()))return "No demo observations yet. Run the demo, then return here to view results.";
+        var report=MiniJson.parseObject(Files.readString(motionReport()));
+        if(report.containsKey("error"))return "Last demo needs attention: "+report.get("error")+"\nCorrect the setup and replay to obtain current observations.";
+        if(!Objects.equals(report.get("context"),motionSetup().context()))return "Model or project hardware changed since these observations. Replay the demo for the current setup.";
+        var text=new StringBuilder("Status: "+report.get("status")+"\n"+report.get("hardware")+"\n");
+        for(var row:FieldPackage.maps(report.get("observations"))) {
+            text.append("\n").append(row.get("action")).append(": ").append(row.get("outcome")).append("\n");
+            if(row.containsKey("forward_m"))text.append(String.format(java.util.Locale.ROOT,"Forward %.3f m · left %.3f m · turn %.1f degrees\n",FieldPackage.num(row,"forward_m"),FieldPackage.num(row,"left_m"),Math.toDegrees(FieldPackage.num(row,"yaw_rad"))));
+            if(row.containsKey("start"))text.append(String.format(java.util.Locale.ROOT,"Joint %.3f → %.3f %s · target %.3f %s\n",FieldPackage.num(row,"start"),FieldPackage.num(row,"end"),row.get("unit"),FieldPackage.num(row,"target"),row.get("unit")));
+            text.append(row.get("detail")).append("\n");
+        }
+        for(var note:(List<?>)report.getOrDefault("notes",List.of()))text.append("\n").append(note);
+        text.append("\n\nCompare observed movements with your physical robot. Return to Parts / Physics assumptions to correct mismatches. Demo observations do not approve collisions or establish physical accuracy.");return text.toString();
+    }
     private void validateRuntime(Path path) throws Exception {
         var model=new ModelProfile(path,false);if(!model.kind.equals("robot"))return;
         var root=new LinkedHashMap<>(model.runtime);root.put("urdf",model.artifact("robot").toString());var config=SimConfig.parse(model.directory,root);

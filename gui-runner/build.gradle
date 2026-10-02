@@ -147,6 +147,15 @@ tasks.register('prepareModels', JavaExec) {
     maxHeapSize = '2g'
     workingDir = rootProject.projectDir
 }
+tasks.register('demoRobot', JavaExec) {
+    group = 'application'
+    description = 'Demonstrate configured drivetrain and mechanism motion without TeamCode.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'simrunner.RobotMotionDemoApp'
+    workingDir = rootProject.projectDir
+    jvmArgs = ['-XstartOnFirstThread', '-Djava.awt.headless=true']
+    maxHeapSize = '2g'
+}
 
 tasks.register('validateModel', JavaExec) {
     group = 'verification'
