@@ -59,6 +59,7 @@ final class GuidedParameterPanel extends JPanel {
         String key=base(path);String text=switch(key){
             case "box_size_m"->"Box dimensions (m)";case "collision_xyz_m"->"Collision position (m)";case "collision_rpy_rad"->"Collision rotation (rad)";
             case "mass_kg"->"Mass (kg)";case "fallback_mass_kg"->"Missing-mass default (kg)";case "mass_mode"->"Mass source";case "inertia_mode"->"Inertia source";
+            case "total_mass_kg"->"Operating robot weight (kg)";case "wheel_radius_m"->"Drive wheel radius (m)";case "track_width_m"->"Drive track width (m)";case "wheelbase_m"->"Drive wheelbase (m)";
             case "inertia_kg_m2"->"Inertia tensor (kg·m²)";case "com_xyz_m"->"Center of mass (m)";case "collision_strategy"->"Collision shape";
             case "origin_xyz_m"->"Model origin (m)";case "origin_rpy_rad"->"Model orientation (rad)";case "up_axis"->"CAD upward axis";
             case "xyz"->path.contains("/joint/")?"Joint position (source units)":"Position (m)";case "rpy"->"Joint rotation (rad)";case "axis"->"Joint axis direction";
@@ -79,6 +80,10 @@ final class GuidedParameterPanel extends JPanel {
         case "role"->"Pieces move independently; decoration/reference parts do not collide.";
         case "type"->"Fixed moves with its parent; continuous rotates freely; revolute/slider use limits.";
         case "mechanicalReduction"->"Signed shaft turns per joint turn; verify direction and gearing.";
+        case "total_mass_kg"->"Whole operating robot with battery; scales prepared body masses and inertias proportionally. Individual mass distribution remains an assumption.";
+        case "wheel_radius_m"->"Half the measured tread diameter; changes wheel speed/traction calculations, not CAD collision geometry.";
+        case "track_width_m"->"Left/right wheel center spacing. Skid-steering effective turning track still needs motion calibration.";
+        case "wheelbase_m"->"Front/rear axle center spacing used by Mecanum kinematics.";
         case "material_override"->"A welded body has one material; set this on its body root.";
         case "max_hulls"->"More pieces may preserve holes but cost more and need collision review.";
         case "use_contact_compliance"->"Enable saved contact stiffness/damping instead of rigid default contact.";

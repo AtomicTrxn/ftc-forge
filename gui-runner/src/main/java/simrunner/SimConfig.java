@@ -26,6 +26,7 @@ public class SimConfig {
     ModelProfile robotProfile;
     public Map<String,Object> scenePieces=Map.of();
     public DifferentialDriveConfig drive;
+    DriveGeometry driveGeometry;
     public MotorIntakeConfig intake;
     public TireDriveConfig tires;
     public FlexibleIntakeConfig flexibleIntake;
@@ -89,6 +90,8 @@ public class SimConfig {
         if(config.robotStart!=null && config.robotStart.y<floorTop)throw new IllegalArgumentException("Robot start must be above the field surface");
         if (root.containsKey("calibration")) config.calibration = (String) root.get("calibration");
         if (root.containsKey("total_mass_kg")) config.totalMassKg = ((Number) root.get("total_mass_kg")).doubleValue();
+        if (config.totalMassKg != null && (!Double.isFinite(config.totalMassKg) || config.totalMassKg <= 0))
+            throw new IllegalArgumentException("Total robot mass must be positive and finite.");
         if (root.containsKey("vhacd_max_hulls")) config.vhacdMaxHulls = ((Number) root.get("vhacd_max_hulls")).intValue();
         if (root.containsKey("imu_latency_ms")) config.imuLatencyMs = ((Number) root.get("imu_latency_ms")).longValue();
         if (config.vhacdMaxHulls < 1 || config.vhacdMaxHulls > 16)
@@ -111,6 +114,10 @@ public class SimConfig {
             }
         }
         if (root.containsKey("drive")) config.drive = DifferentialDriveConfig.parse((Map<String, Object>) root.get("drive"));
+        if (root.containsKey("drive_geometry")) {
+            if(config.drive!=null)throw new IllegalArgumentException("Differential dimensions belong in drive; drive_geometry is for Mecanum.");
+            config.driveGeometry=DriveGeometry.parse(FieldPackage.map(root.get("drive_geometry")));
+        }
         if (root.containsKey("tires")) {
             config.tires = TireDriveConfig.parse((Map<String, Object>) root.get("tires"));
             if (config.drive == null || config.urdf == null) throw new IllegalArgumentException("tires requires differential drive and URDF");

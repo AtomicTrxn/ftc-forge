@@ -23,6 +23,8 @@ New unconfigured runs use the generic field with no pieces. Select a field and m
 
 Prepare new robot and field URDF/STL ZIPs with `./gradlew :gui-runner:prepareModels`. Guided setup supplies instructions, size/orientation checks, migration choices, collision review, resumable progress and a scene/project handoff. Advanced settings, live native collision preview and reusable portable profiles remain available. Identical CAD reuses its reviewed tuning; changed CAD requires review. See [model preparation and portable settings](gui-runner/MODEL_PREPARATION.md).
 
+The [robot measurement guide](gui-runner/ROBOT_MEASUREMENTS.md) adds operating weight, wheel diameter/spacing and motor-binding instructions to guided setup. Selected measurements use kg/lb or mm/cm/in and are saved with the robot profile; changed settings require renewed model review.
+
 Imported robot collision coverage is checked per rigid body before physics starts. The selector's **Review collisions** action shows actual native shapes for the selected robot and field; C toggles collision shapes and V toggles CAD visibility. Save a coverage report with `./gradlew :gui-runner:auditCollisions --args='/absolute/robotProject /absolute/report.json'`. See [collision review](gui-runner/COLLISION_REVIEW.md).
 
 To use your own robot, replace `gui-runner/sample-teamcode` in the commands with an absolute path or a path relative to the repository root. The second argument is the annotated OpMode's class name or display name. The headless runner accepts an optional third argument for watchdog timeout in milliseconds.
