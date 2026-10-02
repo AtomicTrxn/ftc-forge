@@ -17,7 +17,9 @@ final class RobotMotionDemo implements AutoCloseable {
     static final float DT=1f/480;
     record Setup(ModelProfile profile, RobotUrdf urdf, SimConfig config, HardwareMap hardware,
                  RobotMotionPlan plan, String hardwareLabel, String context) { }
-    record Action(String label, RobotMotionPlan.Movement drive, RobotMotionPlan.Mechanism mechanism, double target) { }
+    record Action(String id,String group,String label, RobotMotionPlan.Movement drive, RobotMotionPlan.Mechanism mechanism, double target) { }
+    final String runId=UUID.randomUUID().toString();
+    final String selection;
     final Setup setup;
     final PhysicsSpace space;
     final Node root=new Node("motion-demo");
@@ -48,8 +50,10 @@ final class RobotMotionDemo implements AutoCloseable {
             var settings=MiniJson.parseObject(Files.readString(project.resolve("sim.config")));
             if(!(settings.get("robotConfig") instanceof String xml)||!(settings.get("presetMotors") instanceof String preset))throw new IllegalArgumentException("Choose a project with robotConfig and presetMotors paths in sim.config.");
             Path xmlFile=project.resolve(xml),presetFile=project.resolve(preset);
-            hardware=HardwareMapBuilder.build(RobotConfigXml.parse(xmlFile.toFile()),PresetRobotConfig.load(presetFile));
-            label="Selected project hardware and motor presets";
+            var xmlConfig=RobotConfigXml.parse(xmlFile.toFile());var motorPreset=PresetRobotConfig.load(presetFile);
+            hardware=HardwareMapBuilder.build(xmlConfig,motorPreset);
+            var fallback=xmlConfig.devices.stream().filter(d->RobotConfigXml.resolveType(d.tag)==RobotConfigXml.DeviceType.MOTOR&&!motorPreset.motors.containsKey(d.name)).map(d->d.name).toList();
+            label=fallback.isEmpty()?"Selected project hardware and motor presets":"Selected project hardware; generic fallback motor specs for "+String.join(", ",fallback)+". Configure motor presets to verify real effort.";
             context=List.of(project.toAbsolutePath().normalize().toString(),settings,ModelProfile.hash(xmlFile),ModelProfile.hash(presetFile));
         } else {
             hardware=new HardwareMap();
@@ -63,10 +67,15 @@ final class RobotMotionDemo implements AutoCloseable {
         }
         urdf.validateHardwareMap(hardware);
         var plan=new RobotMotionPlan(urdf,config,hardware);
-        return new Setup(profile,urdf,config,hardware,plan,label,GuidedSetupSession.hash(List.of(profile.digest,context)));
+        return new Setup(profile,urdf,config,hardware,plan,label,GuidedSetupSession.hash(List.of("motion-demo-v2",profile.digest,context)));
     }
 
     RobotMotionDemo(Setup setup,AssetManager assets)throws Exception {
+        this(setup,assets,"");
+    }
+    RobotMotionDemo(Setup setup,AssetManager assets,String selection)throws Exception {
+        this.selection=selection;
+        if(!selection.isEmpty()&&setup.plan.items().stream().noneMatch(i->i.group().equals(selection)))throw new IllegalArgumentException("This movement is no longer configured. Return to the guide and choose a current movement.");
         this.setup=setup;space=new PhysicsSpace(PhysicsSpace.BroadphaseType.DBVT);space.setAccuracy(DT);
         world=new PhysicsWorld(assets,root,space);
         try {
@@ -89,7 +98,7 @@ final class RobotMotionDemo implements AutoCloseable {
             for(var m:setup.hardware.getAll(SimDcMotorEx.class))m.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
             // Initial servo target follows the joint's current zero pose where reachable.
             for(var m:setup.plan.mechanisms)if(m.servo())servo(m,0);
-            for(var movement:setup.plan.drive)actions.add(new Action(movement.label(),movement,null,0));
+            for(var movement:setup.plan.drive){String id=RobotMotionPlan.driveId(movement);actions.add(new Action(id,id,movement.label(),movement,null,0));}
             for(var m:setup.plan.mechanisms) {
                 double low,high;
                 if(m.servo()) {
@@ -100,9 +109,11 @@ final class RobotMotionDemo implements AutoCloseable {
                 if(high-low<1e-6){observations.add(Map.of("action",m.joint().name(),"outcome","needs setup","detail","No reachable travel; check joint limits, servo travel and signed gearing."));continue;}
                 if(m.servo()){double span=high-low;low+=span*.2;high-=span*.2;}
                 String unit=m.joint().type().equals("prismatic")?"m":"rad";
-                actions.add(new Action(String.format(Locale.ROOT,"%s — toward %.3f %s",m.joint().name(),high,unit),null,m,high));
-                actions.add(new Action(String.format(Locale.ROOT,"%s — toward %.3f %s",m.joint().name(),low,unit),null,m,low));
+                String group=RobotMotionPlan.jointGroup(m);
+                actions.add(new Action(group+"/first",group,String.format(Locale.ROOT,"%s — toward %.3f %s",m.joint().name(),high,unit),null,m,high));
+                actions.add(new Action(group+"/second",group,String.format(Locale.ROOT,"%s — toward %.3f %s",m.joint().name(),low,unit),null,m,low));
             }
+            if(!selection.isEmpty()){actions.removeIf(a->!a.group.equals(selection));observations.clear();if(actions.isEmpty())throw new IllegalArgumentException("No reachable movement for this selection. Check joint limits and servo travel.");}
             world.driveControllerEnabled=!setup.plan.drive.isEmpty();
             if(actions.isEmpty())finished=true;
         }catch(Exception e){space.destroy();throw e;}
@@ -156,7 +167,7 @@ final class RobotMotionDemo implements AutoCloseable {
         }catch(Exception e){failure=e.getMessage()==null?e.toString():e.getMessage();observations.add(Map.of("action",action()==null?"Settle":action().label,"outcome","needs attention","detail",failure));stop();}
     }
     private void observe(Action a) {
-        var row=new LinkedHashMap<String,Object>();row.put("action",a.label);
+        var row=new LinkedHashMap<String,Object>();row.put("id",a.id);row.put("group",a.group);row.put("action",a.label);
         boolean moved,correct;
         if(a.drive!=null) {
             Vector3f local=startRotation.inverse().mult(world.getChassisPosition().subtract(startPosition));Vector3f forward=startRotation.inverse().mult(world.getChassisRotation().mult(Vector3f.UNIT_X));double yaw=Math.atan2(-forward.z,forward.x);
@@ -171,7 +182,7 @@ final class RobotMotionDemo implements AutoCloseable {
         }
         row.put("outcome",!moved?"no clear movement":correct?"movement observed":"unexpected direction");row.put("detail",!moved?"Inspect bindings, limits, gearing, contact and motor effort.":correct?"Compare this movement with your expected physical robot.":"Check axes, signs, gearing and bindings.");observations.add(row);
     }
-    Map<String,Object> report(){return Map.of("schema_version",1,"model_digest",setup.profile.digest,"context",setup.context,"hardware",setup.hardwareLabel,"complete",finished&&!stopped,"status",failure.isEmpty()?stopped?"stopped":finished?"finished":"running":"needs attention","observations",List.copyOf(observations),"notes",setup.plan.notes,"scope","Scripted native motion observations; not collision review or measured physical accuracy.");}
+    Map<String,Object> report(){var report=new LinkedHashMap<String,Object>();report.put("schema_version",2);report.put("run_id",runId);report.put("selection",selection);report.put("model_digest",setup.profile.digest);report.put("context",setup.context);report.put("hardware",setup.hardwareLabel);report.put("complete",finished&&!stopped);report.put("status",failure.isEmpty()?stopped?"stopped":finished?"finished":"running":"needs attention");report.put("observations",List.copyOf(observations));report.put("notes",setup.plan.notes);report.put("scope","Scripted native motion observations; not collision review or measured physical accuracy.");return report;}
     String status(){return failure.isEmpty()?finished?stopped?"Stopped":"Demo complete":paused?"Paused":action()==null?"Settling on the demo floor":action().label:failure;}
     public void close(){stopMotors();space.destroy();}
 }

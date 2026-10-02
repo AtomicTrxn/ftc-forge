@@ -472,6 +472,8 @@ def migrate(old,new):
     if old['model_kind']!=new['model_kind']:raise ValueError('Robot and field settings cannot be interchanged')
     same=old['source']['fingerprint']==new['source']['fingerprint']
     new['profile_id']=old['profile_id'];new['parameters']=copy.deepcopy(old['parameters']);new['runtime']=copy.deepcopy(old['runtime']);new['provenance']=copy.deepcopy(old['provenance']);new['adapter']=old['adapter'] if same else 'general'
+    # Retain user motion assessments as history; their exact digest/context decides validity.
+    if 'motion_review' in old:new['motion_review']=copy.deepcopy(old['motion_review'])
     pending=[];used=set();decisions=[]
     for name,entity in new['entities'].items():
         candidate=None;l=new['source']['links'][name]

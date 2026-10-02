@@ -10,6 +10,15 @@ import java.util.*;
 final class RobotMotionPlan {
     record Movement(String label, double forward, double left, double turn) { }
     record Mechanism(RobotUrdf.Joint joint, List<RobotUrdf.Actuator> actuators, boolean servo) { }
+    record Item(String id,String group,String label,String part) { }
+    static String driveId(Movement m){return "drive/"+m.label().toLowerCase(Locale.ROOT).replace(' ','-');}
+    static String jointGroup(Mechanism m){return "joint/"+m.joint().name();}
+    List<Item> items(){
+        var out=new ArrayList<Item>();
+        for(var d:drive)out.add(new Item(driveId(d),driveId(d),d.label(),""));
+        for(var m:mechanisms){String group=jointGroup(m);out.add(new Item(group+"/first",group,m.joint().name()+" · first target",m.joint().child()));out.add(new Item(group+"/second",group,m.joint().name()+" · return target",m.joint().child()));}
+        return List.copyOf(out);
+    }
     final List<Movement> drive;
     final List<Mechanism> mechanisms;
     final List<String> notes;
