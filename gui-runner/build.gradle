@@ -21,7 +21,11 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter'
 }
 
-test { useJUnitPlatform() }
+test {
+    useJUnitPlatform()
+    // Controller tests invoke these scripts; changes must invalidate cached test results.
+    inputs.files(rootProject.fileTree('tools') { include '*.py'; exclude 'test_*.py' })
+}
 
 application {
     mainClass = 'simrunner.Main'

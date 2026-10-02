@@ -453,6 +453,21 @@ def migrate_joint(settings, previous, current):
     return result
 
 
+def remap_entity_provenance(provenance, mapping):
+    # Transform from a snapshot so simultaneous renames cannot overwrite each other.
+    prefixes={pointer(old):pointer(new) for old,new in mapping.items()}
+    result={};retained={}
+    for path,value in provenance.items():
+        parts=path.split('/',2)
+        if len(parts)==3 and parts[0]=='entities' and parts[1] in prefixes:
+            path='entities/'+prefixes[parts[1]]+'/'+parts[2]
+            retained[path]=copy.deepcopy(value)
+        else:result[path]=copy.deepcopy(value)
+    # A retained part can take a removed part's name; its own labels take precedence.
+    result.update(retained)
+    return result
+
+
 def migrate(old,new):
     if old['model_kind']!=new['model_kind']:raise ValueError('Robot and field settings cannot be interchanged')
     same=old['source']['fingerprint']==new['source']['fingerprint']
@@ -478,6 +493,7 @@ def migrate(old,new):
             choices=[n for n in old['entities'] if n not in used and (n==name or old['source']['links'][n]['geometry_signature']==l['geometry_signature'])]
             pending.append({'new':name,'options':['Generate defaults']+['Use settings: '+n for n in choices],'reason':'Changed or ambiguous part; select a source for retained settings'})
     mapping={d['old']:d['new'] for d in decisions}
+    new['provenance']=remap_entity_provenance(new['provenance'],mapping)
     old_names=set(old['entities']);new_names=set(new['entities'])
     for name,entity in new['entities'].items():
         j=entity['settings']['joint']
@@ -507,7 +523,7 @@ def migrate(old,new):
     removed=[n for n in old['entities'] if n not in used]
     if old['adapter']=='biobuzz' and not same:pending.append({'new':None,'options':['Regenerate general field preparation'],'reason':'Authored BIOBUZZ assembly corrections cannot be safely migrated automatically. Assign roles and review all field bodies in the editor.'})
     if removed:pending.append({'new':None,'options':['Acknowledge removed parts'],'removed':removed,'reason':'Old settings must not disappear silently'})
-    new['migration']={'pending':pending,'decisions':decisions,'from_revision':old['revision_id'],'old_entities':copy.deepcopy(old['entities']) if pending else {},'old_source_joints':{n:l['joint'] for n,l in old['source']['links'].items()} if pending else {}}
+    new['migration']={'pending':pending,'decisions':decisions,'from_revision':old['revision_id'],'old_entities':copy.deepcopy(old['entities']) if pending else {},'old_provenance':copy.deepcopy(old['provenance']) if pending else {},'old_source_joints':{n:l['joint'] for n,l in old['source']['links'].items()} if pending else {}}
     if same:
         new['entities']=copy.deepcopy(old['entities']);new['migration']=copy.deepcopy(old['migration']);new['review']=copy.deepcopy(old['review'])
     else:new['review']={'state':'draft'}
@@ -584,7 +600,11 @@ def resolve_migration(path,index,choice):
         if item not in p['migration']['pending']:p['migration']['pending'].insert(0,item)
         index=p['migration']['pending'].index(item)
     if item.get('entity_parent') and choice.startswith('Parent: '):p['entities'][item['entity_parent']]['settings']['joint']['parent']=choice[8:]
-    if item.get('binding_link') and choice=='Use new CAD bindings':p['entities'][item['binding_link']]['settings']['actuators']=item['cad_actuators']
+    if item.get('binding_link') and choice=='Use new CAD bindings':
+        p['entities'][item['binding_link']]['settings']['actuators']=item['cad_actuators']
+        base='entities/'+pointer(item['binding_link'])+'/settings/actuators'
+        p['provenance']={key:value for key,value in p['provenance'].items() if key!=base and not key.startswith(base+'/')}
+        p['provenance'][base]='source CAD'
     if choice.startswith('Map to: '):
         target=p['runtime']
         for k in item['runtime_path'][:-1]:target=target[k]
@@ -593,8 +613,15 @@ def resolve_migration(path,index,choice):
         old=choice[14:];name=item['new'];entity=copy.deepcopy(p['migration']['old_entities'][old]);entity['settings']['joint']=migrate_joint(entity['settings']['joint'],p['migration']['old_source_joints'].get(old),p['source']['links'][name]['joint']);
         if entity['settings']['joint'] and entity['settings']['joint']['parent'] not in p['entities']:entity['settings']['joint']['parent']=p['source']['links'][name]['joint']['parent']
         p['entities'][name]=entity
+        previous=p['migration'].get('old_provenance',p['provenance'])
+        old_base='entities/'+pointer(old)+'/'
+        new_base='entities/'+pointer(name)+'/'
+        retained={new_base+key[len(old_base):]:value for key,value in previous.items() if key.startswith(old_base)}
+        p['provenance']={key:value for key,value in p['provenance'].items() if not key.startswith(new_base) and not (old not in p['entities'] and key.startswith(old_base))}
+        p['provenance'].update(retained)
         # Changed geometry never silently retains a box's old dimensions.
         p['entities'][name]['settings']['collision_strategy']='visual'
+        p['provenance'][new_base+'settings/collision_strategy']='generated default (migration geometry review)'
         p['entities'][name]['assumptions'].append('Migrated settings; regenerated collision geometry requires review')
         for pending in p['migration']['pending']:
             if 'removed' in pending:pending['removed']=[n for n in pending['removed'] if n!=old]

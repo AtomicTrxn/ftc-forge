@@ -56,4 +56,160 @@ class ModelPreparationTest(unittest.TestCase):
         self.zip(URDF);p=self.load();data=m.read(p);data['schema_version']=999;m.atomic_json(p,data);self.assertRaises(ValueError,m.compile_profile,p)
     def test_scene_does_not_edit_model_and_saved_revision_is_immutable(self):
         saved=self.ready(self.load());before=saved.read_bytes();scene=self.root/'scene.json';m.scene(scene,saved);self.assertEqual(before,saved.read_bytes());self.assertEqual(m.read(saved)['revision_id'],m.read(scene)['robot_identity']['revision_id']);self.assertRaises(ValueError,m.save_revision,saved,self.library)
+
+    def measured_robot(self, mesh=False):
+        wheel = '<mesh filename="wheel.stl"/>' if mesh else '<sphere radius=".04"/>'
+        xml = f'''<robot name="Measured robot"><link name="base"><visual><geometry><box size=".3 .2 .1"/></geometry></visual></link>
+        <link name="wheel~left"><visual><geometry>{wheel}</geometry></visual></link>
+        <joint name="wheel_joint" type="continuous"><parent link="base"/><child link="wheel~left"/><origin xyz="0 .2 0"/><axis xyz="0 1 0"/></joint>
+        <transmission name="tx"><joint name="wheel_joint"/><actuator name="cad_motor"><mechanicalReduction>1</mechanicalReduction></actuator></transmission></robot>'''
+        self.zip(xml)
+        if mesh:
+            stl = self.root/'wheel.stl'
+            m.write_stl(stl, [((0.,0.,0.),(.08,0.,0.),(0.,.08,.02))])
+            with zipfile.ZipFile(self.package,'a') as package:
+                package.write(stl,'other/urdf/wheel.stl')
+        p = self.load()
+        data = m.read(p)
+        data['runtime'].update(total_mass_kg=9.0718474,
+            drive={'type':'differential','left_motor':'leftDrive','right_motor':'rightDrive',
+                   'wheel_radius_m':.0508,'track_width_m':.4064,'left_shaft_sign':-1,'right_shaft_sign':1},
+            calibration_data={'battery':{'v_internal':12.7,'r_battery':.15},
+                              'motors':{'leftDrive':{'tau_static_nm':.03,'viscous_b_nm_s_per_rad':.004}}})
+        data['entities']['wheel~left']['settings']['actuators'] = [{'name':'leftDrive','mechanicalReduction':-2.}]
+        data['provenance'].update({'runtime/total_mass_kg':'measured manually: operating robot with battery',
+            'runtime/drive/wheel_radius_m':'measured manually: tread diameter',
+            'runtime/drive/track_width_m':'measured manually: left/right wheel center spacing',
+            'entities/wheel~0left/settings/actuators/0/name':'user supplied',
+            'entities/wheel~0left/settings/actuators/0/mechanicalReduction':'measured manually: sprocket ratio'})
+        m.atomic_json(p,data)
+        return self.ready(p), xml
+
+    def assert_preserved(self, expected, path, part='wheel~left'):
+        data = m.read(path)
+        self.assertEqual(expected['runtime'], data['runtime'])
+        for key,value in expected['provenance'].items():
+            if key.startswith('runtime/'):
+                self.assertEqual(value, data['provenance'][key])
+        self.assertEqual(expected['entities']['wheel~left']['settings']['actuators'],
+                         data['entities'][part]['settings']['actuators'])
+        base = 'entities/'+m.pointer(part)+'/settings/actuators/0/'
+        self.assertEqual('user supplied',data['provenance'][base+'name'])
+        self.assertEqual('measured manually: sprocket ratio',data['provenance'][base+'mechanicalReduction'])
+        prepared = m.xml(path.parent/'prepared/robot.urdf').find('transmission/actuator')
+        self.assertEqual('leftDrive',prepared.get('name'))
+        self.assertEqual(-2.,float(prepared.findtext('mechanicalReduction')))
+        self.assertEqual(expected['runtime']['calibration_data'], m.read(path.parent/'prepared/calibration.json'))
+
+    def test_measured_urdf_stl_bundle_preserves_bindings_and_calibration_in_another_library(self):
+        saved,_ = self.measured_robot(mesh=True)
+        before = saved.read_bytes()
+        bundle = self.root/'measured.zip'
+        m.export_bundle(saved,bundle)
+        restored = m.import_bundle(bundle,self.root/'portable')
+        self.assert_preserved(m.read(saved),restored)
+        self.assertTrue(m.verify_receipt(restored)['ready'])
+        self.assertEqual(m.read(saved)['provenance'],m.read(restored)['provenance'])
+        self.assertTrue(list((restored.parent/'source/assets').glob('*.stl')))
+        self.assertEqual(before,saved.read_bytes())
+
+    def test_automatic_cad_rename_preserves_measurements_and_moves_binding_provenance(self):
+        saved,xml = self.measured_robot()
+        original = saved.read_bytes()
+        bundle = self.root/'measured.zip'
+        m.export_bundle(saved,bundle)
+        restored = m.import_bundle(bundle,self.root/'portable')
+        self.zip(xml.replace('wheel~left','wheel~front').replace('0 .2 0','0 .22 0'))
+        migrated = m.import_zip(self.package,self.root/'portable','robot',restored)
+        self.assert_preserved(m.read(saved),migrated,'wheel~front')
+        self.assertEqual(m.read(saved)['entities']['wheel~left']['id'],m.read(migrated)['entities']['wheel~front']['id'])
+        self.assertFalse(any(key.startswith('entities/wheel~0left/') for key in m.read(migrated)['provenance']))
+        self.assertFalse(m.verify_receipt(migrated)['ready'])
+        self.assertEqual([],m.read(migrated)['migration']['pending'])
+        self.assertRaisesRegex(ValueError,'preview|validateModel',m.save_revision,migrated,self.root/'portable',True)
+        self.assertEqual(original,saved.read_bytes())
+
+    def test_changed_geometry_retained_settings_survive_migration_and_second_round_trip(self):
+        saved,xml = self.measured_robot()
+        original = saved.read_bytes()
+        self.zip(xml.replace('radius=".04"','radius=".06"'))
+        migrated = self.load(reuse=saved)
+        pending = m.read(migrated)['migration']['pending']
+        i = next(i for i,item in enumerate(pending) if item.get('new')=='wheel~left')
+        self.assertIn('Use settings: wheel~left',pending[i]['options'])
+        self.assertRaisesRegex(ValueError,'migration',m.save_revision,migrated,self.library,True)
+        m.resolve_migration(migrated,i,'Use settings: wheel~left')
+        self.assert_preserved(m.read(saved),migrated)
+        self.assertFalse(m.verify_receipt(migrated)['ready'])
+        self.assertEqual([],m.read(migrated)['migration']['pending'])
+        updated = self.ready(migrated)
+        bundle = self.root/'migrated.zip'
+        m.export_bundle(updated,bundle)
+        restored = m.import_bundle(bundle,self.root/'after-migration')
+        self.assert_preserved(m.read(saved),restored)
+        self.assertTrue(m.verify_receipt(restored)['ready'])
+        self.assertEqual(original,saved.read_bytes())
+
+    def test_changed_cad_binding_requires_choice_and_attributes_replacement_to_cad(self):
+        saved,xml = self.measured_robot()
+        self.zip(xml.replace('cad_motor','new_cad_motor'))
+        for choice in ['Keep saved bindings','Use new CAD bindings']:
+            with self.subTest(choice=choice):
+                migrated = self.load(reuse=saved)
+                pending = m.read(migrated)['migration']['pending']
+                i = next(i for i,item in enumerate(pending) if item.get('binding_link'))
+                self.assertEqual(['Keep saved bindings','Use new CAD bindings'],pending[i]['options'])
+                self.assertFalse(m.verify_receipt(migrated)['ready'])
+                m.resolve_migration(migrated,i,choice)
+                if choice=='Keep saved bindings':
+                    self.assert_preserved(m.read(saved),migrated)
+                else:
+                    data = m.read(migrated)
+                    self.assertEqual([{'name':'new_cad_motor','mechanicalReduction':1.}],data['entities']['wheel~left']['settings']['actuators'])
+                    base = 'entities/wheel~0left/settings/actuators'
+                    self.assertEqual('source CAD',data['provenance'][base])
+                    self.assertFalse(any(key.startswith(base+'/') for key in data['provenance']))
+                    self.assertEqual(m.read(saved)['runtime'],data['runtime'])
+
+    def test_ambiguous_renamed_part_keeps_measurement_provenance_after_user_choice(self):
+        saved,xml = self.measured_robot()
+        extra = '''<link name="duplicate"><visual><geometry><sphere radius=".04"/></geometry></visual></link>
+        <joint name="duplicate_joint" type="fixed"><parent link="base"/><child link="duplicate"/><origin xyz="0 -.2 0"/></joint>'''
+        self.zip(xml.replace('</robot>',extra+'</robot>'))
+        with_duplicate = self.load(reuse=saved)
+        pending = m.read(with_duplicate)['migration']['pending']
+        i = next(i for i,item in enumerate(pending) if item.get('new')=='duplicate')
+        m.resolve_migration(with_duplicate,i,'Generate defaults')
+        saved = self.ready(with_duplicate)
+        original = saved.read_bytes()
+        self.zip(xml.replace('</robot>',extra+'</robot>').replace('wheel~left','wheel~front'))
+        migrated = self.load(reuse=saved)
+        pending = m.read(migrated)['migration']['pending']
+        i = next(i for i,item in enumerate(pending) if item.get('new')=='wheel~front')
+        self.assertIn('Use settings: wheel~left',pending[i]['options'])
+        m.resolve_migration(migrated,i,'Use settings: wheel~left')
+        self.assert_preserved(m.read(saved),migrated,'wheel~front')
+        self.assertFalse(any(key.startswith('entities/wheel~0left/') for key in m.read(migrated)['provenance']))
+        self.assertEqual([],m.read(migrated)['migration']['pending'])
+        self.assertFalse(m.verify_receipt(migrated)['ready'])
+        self.assertEqual(original,saved.read_bytes())
+
+    def test_rename_into_removed_part_name_does_not_take_that_parts_old_labels(self):
+        saved,xml = self.measured_robot()
+        extra = '''<link name="duplicate"><visual><geometry><sphere radius=".07"/></geometry></visual></link>
+        <joint name="duplicate_joint" type="fixed"><parent link="base"/><child link="duplicate"/><origin xyz="0 -.2 0"/></joint>'''
+        self.zip(xml.replace('</robot>',extra+'</robot>'))
+        with_duplicate = self.load(reuse=saved)
+        pending = m.read(with_duplicate)['migration']['pending']
+        i = next(i for i,item in enumerate(pending) if item.get('new')=='duplicate')
+        m.resolve_migration(with_duplicate,i,'Generate defaults')
+        data = m.read(with_duplicate)
+        data['provenance']['entities/duplicate/settings/actuators/0/mechanicalReduction'] = 'unrelated old part ratio'
+        m.atomic_json(with_duplicate,data)
+        saved = self.ready(with_duplicate)
+        self.zip(xml.replace('wheel~left','duplicate'))
+        migrated = self.load(reuse=saved)
+        self.assert_preserved(m.read(saved),migrated,'duplicate')
+        self.assertFalse(m.verify_receipt(migrated)['ready'])
+        self.assertTrue(any('duplicate' in item.get('removed',[]) for item in m.read(migrated)['migration']['pending']))
 if __name__=='__main__':unittest.main()

@@ -63,5 +63,6 @@ Selecting a hardware name through the binding dialog marks it **User supplied**.
 - Editing a saved reviewed model creates a separate draft. Its old revision remains available; the changed draft needs native checking and explicit review before use.
 - Save a reviewed revision after checking assumptions and collisions. For a simulation, check the scene again and rerun project compatibility checks.
 - Export the reviewed robot profile to carry the source/prepared assets, measured values, provenance and existing calibration together. Model reuse and migration retain these saved settings through the existing preparation workflow.
+- When a compatible CAD part is renamed, its motor settings and provenance follow the new name. If geometry is ambiguous, choose **Use settings: …** to retain the intended part's measurements and bindings. Changed CAD still needs native checking and review. If CAD transmissions change, **Keep saved bindings** preserves your mapping; **Use new CAD bindings** replaces it and labels the new values as source CAD, so verify gearing and direction again.
 
 Friction, tire slip, rubber stiffness, retention and response remain provisional unless independently measured/calibrated. This guide does not certify agreement with the physical robot.
