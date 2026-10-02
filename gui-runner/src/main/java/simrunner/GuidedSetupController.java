@@ -49,6 +49,14 @@ final class GuidedSetupController {
         FieldPackage.map(session.data.get("models")).put(kind,session.file.getParent().relativize(p.toRealPath()).toString());session.save();
     }
     void compile(String kind) throws Exception {if(!session.ready(kind))models.run("compile",session.modelPath(kind).toString());validateRuntime(session.modelPath(kind));}
+    void wheelSupport(boolean enabled) throws Exception {
+        var profile=session.profile("robot");var runtime=FieldPackage.map(profile.get("runtime"));
+        runtime.putIfAbsent("drive_contacts",DriveContactConfig.defaults(enabled));
+        FieldPackage.map(runtime.get("drive_contacts")).put("enabled",enabled);
+        DriveContactConfig.parse(FieldPackage.map(runtime.get("drive_contacts")));
+        FieldPackage.map(profile.get("provenance")).put("runtime/drive_contacts/enabled","user supplied: wheel support mode");
+        update("robot",profile);compile("robot");
+    }
     void measurements(RobotMeasurements.Entry entry) throws Exception {
         if(entry.empty())return;
         var measured=RobotMeasurements.apply(session.profile("robot"),entry);

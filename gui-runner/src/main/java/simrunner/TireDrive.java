@@ -8,7 +8,7 @@ import simcore.RobotUrdf;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import java.util.*;
 
-/** Ray-supported individual tire forces with shared shaft inertia and equal tire reaction torque. */
+/** Contact-supported individual tire forces with shared shaft inertia and equal tire reaction torque. */
 final class TireDrive {
     record Wheel(String joint, String motor, Vector3f hub, double inertia) {}
     record State(String joint, boolean supported, double surfaceMps, double hubSpeedMps, double slipMps, double forceN, boolean sliding) {}
@@ -26,7 +26,7 @@ final class TireDrive {
     }
     TireDrive(PhysicsWorld world, HardwareMap map, ImportedRobotScene scene, DifferentialDriveConfig drive, TireDriveConfig config) {
         this.world=world;this.drive=drive;this.config=config;this.wheels=List.copyOf(scene.driveWheels);
-        world.chassisBody().setFriction(0); // Tires provide ground friction; avoid counting chassis-floor drag twice.
+        if(world.driveContacts()==null)world.chassisBody().setFriction(0); // Legacy ray support uses a frictionless chassis proxy.
         if(wheels.isEmpty())throw new IllegalArgumentException("Tire model needs imported continuous drive-wheel joints");
         for(String joint:config.omniJoints())if(wheels.stream().noneMatch(w->w.joint.equals(joint)))
             throw new IllegalArgumentException("Unknown omni tire joint: "+joint);
@@ -78,6 +78,7 @@ final class TireDrive {
         List<Vector3f> hubs=wheels.stream().map(w->world.robotPointWorld(w.hub)).toList();
         boolean[] supported=new boolean[wheels.size()];int count=0;
         for(int i=0;i<wheels.size();i++) {
+            if(world.driveContacts()!=null){supported[i]=world.driveContacts().snapshot().supported(wheels.get(i).joint);if(supported[i])count++;continue;}
             Vector3f hub=hubs.get(i),end=hub.add(0,(float)(-drive.wheelRadiusM()-config.contactToleranceM()),0);
             for(var hit:world.space().rayTest(hub,end)) {
                 // Current FTC floor model is flat and static. Ignore every robot/game-piece body.
@@ -98,10 +99,17 @@ final class TireDrive {
             double rx=offset.cross(forward).y,ry=offset.cross(left).y;
             double invLong=1/world.driveMass()+rx*rx/world.driveYawInertia()+drive.wheelRadiusM()*drive.wheelRadiusM()/side.inertia;
             double invLat=1/world.driveMass()+ry*ry/world.driveYawInertia();
-            var force=TireFriction.solve(spec,slip,velocity.dot(left),world.driveMass()*9.81/count,dt,invLong,invLat);
-            body.applyImpulse(forward.mult((float)(force.longitudinalN()*dt)).add(left.mult((float)(force.lateralN()*dt))),offset);
-            side.omega-=force.longitudinalN()*drive.wheelRadiusM()*dt/side.inertia;
-            states.add(new State(wheel.joint,true,surface,velocity.dot(forward),slip,force.longitudinalN(),force.sliding()));
+            double normal=world.driveContacts()==null?world.driveMass()*9.81/count:world.driveContacts().snapshot().wheels().stream().filter(w->w.joint().equals(wheel.joint)).mapToDouble(DriveContacts.Support::normalImpulse).sum()/dt;
+            var force=TireFriction.solve(spec,slip,velocity.dot(left),normal,dt,invLong,invLat);
+            double longitudinal=force.longitudinalN(),lateral=force.lateralN();boolean sliding=force.sliding();
+            if(world.driveContacts()!=null) {
+                double grip=world.driveContacts().snapshot().wheels().stream().filter(w->w.joint().equals(wheel.joint)).mapToDouble(DriveContacts.Support::frictionImpulse).sum()/dt;
+                double requested=Math.hypot(longitudinal,lateral);
+                if(requested>grip){double scale=grip/requested;longitudinal*=scale;lateral*=scale;sliding=true;}
+            }
+            body.applyImpulse(forward.mult((float)(longitudinal*dt)).add(left.mult((float)(lateral*dt))),offset);
+            side.omega-=longitudinal*drive.wheelRadiusM()*dt/side.inertia;
+            states.add(new State(wheel.joint,true,surface,velocity.dot(forward),slip,longitudinal,sliding));
         }
         for(Side s:sides.values()){s.angle+=s.omega*dt;s.sync();}
     }

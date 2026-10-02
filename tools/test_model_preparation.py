@@ -16,6 +16,22 @@ class ModelPreparationTest(unittest.TestCase):
     def load(self,kind='robot',reuse=None):return m.import_zip(self.package,self.library,kind,reuse)
     def ready(self,path):
         r=m.compile_profile(path);m.atomic_json(path.parent/'validation.json',{'valid':True,'effective_digest':r['effective_digest']});return m.save_revision(path,self.library,True)
+    def test_wheel_settings_round_trip_and_migration_preserve_reviewed_contact_mode(self):
+        p=self.load();data=m.read(p);cfg=data['runtime']['drive_contacts'];self.assertTrue(cfg['enabled'])
+        cfg.update(min_support_normal_y=.83,max_contact_gap_m=.001,rolling_resistance_coefficient=.02);m.atomic_json(p,data);saved=self.ready(p);before=saved.read_bytes()
+        bundle=self.root/'contacts.zip';m.export_bundle(saved,bundle);restored=m.import_bundle(bundle,self.root/'portable');self.assertEqual(cfg,m.read(restored)['runtime']['drive_contacts'])
+        self.zip(URDF.replace('0 0 .06','0 0 .07'));migrated=m.import_zip(self.package,self.root/'portable','robot',restored);self.assertEqual(cfg,m.read(migrated)['runtime']['drive_contacts']);self.assertFalse(m.verify_receipt(migrated)['ready']);self.assertEqual(before,saved.read_bytes())
+        edited=m.read(migrated);edited['runtime']['drive_contacts']['max_contact_gap_m']=.1;m.atomic_json(migrated,edited);self.assertRaises(ValueError,m.compile_profile,migrated)
+    def test_legacy_modes_do_not_change_on_capture_reimport_or_migration(self):
+        p=self.load();data=m.read(p);data['runtime'].pop('drive_contacts');m.atomic_json(p,data);saved=self.ready(p);self.assertNotIn('drive_contacts',m.read(self.load())['runtime'])
+        self.zip(URDF.replace('0 0 .06','0 0 .07'));self.assertNotIn('drive_contacts',m.read(self.load(reuse=saved))['runtime'])
+        self.assertNotIn('drive_contacts',m.new_profile(p.parent/'source/model.urdf','robot',{})['runtime']);self.assertNotIn('drive_contacts',m.new_profile(p.parent/'source/model.urdf','field')['runtime'])
+    def test_chassis_proxy_does_not_hide_a_powered_wheel_or_its_fixed_tread(self):
+        xml=URDF.replace('<visual><geometry><box size="1 1 .02"/></geometry></visual>','<collision><geometry><box size="1 1 .02"/></geometry></collision>')
+        xml=xml.replace('type="fixed"','type="continuous"').replace('</robot>','<transmission name="drive"><joint name="ball_mount"/><actuator name="left_front_drive"/></transmission></robot>');self.zip(xml)
+        p=self.load();self.assertEqual('visual',m.read(p)['entities']['ball']['settings']['collision_strategy'])
+        xml=xml.replace('<link name="ball"><visual><geometry><sphere radius=".04"/></geometry></visual></link>','<link name="ball"/><link name="tread"><visual><geometry><sphere radius=".04"/></geometry></visual></link><joint name="tread_mount" type="fixed"><parent link="ball"/><child link="tread"/></joint>');self.zip(xml)
+        p=m.import_zip(self.package,self.library,'robot',fresh=True);self.assertEqual('visual',m.read(p)['entities']['tread']['settings']['collision_strategy'])
     def test_default_generation_and_source_preservation(self):
         original=self.package.read_bytes();p=self.load();data=m.read(p);self.assertEqual('visual',data['entities']['base']['settings']['collision_strategy']);self.assertEqual('draft',data['review']['state']);self.assertEqual(original,self.package.read_bytes());self.assertEqual('1.0 1.0 0.02',m.xml(p.parent/'prepared/robot.urdf').find('.//collision/geometry/box').get('size'))
     def test_review_exact_revision_portability_and_old_revision(self):

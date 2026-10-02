@@ -29,6 +29,9 @@ final class RobotMotionPlan {
         drivetrain=config.drive==null?"Mecanum":"Differential / tank";
         driveNames=Set.copyOf(config.drive==null?DriveGeometry.MOTORS:config.drive.motorNames());
         var notes=new ArrayList<String>();
+        notes.add(config.driveContacts!=null&&config.driveContacts.enabled()
+            ?"Native wheel support: drive needs wheel collision shapes on a static floor. Belly scraping and wall friction remain active."
+            :"Legacy drive support: wheel collision geometry is omitted. Choose Wheel support model in Physics assumptions to review native wheel contacts.");
         var wheels=new HashSet<String>();var bound=new HashSet<String>();
         for(var tx:urdf.transmissions.values()) {
             var j=urdf.joints.get(tx.joint());

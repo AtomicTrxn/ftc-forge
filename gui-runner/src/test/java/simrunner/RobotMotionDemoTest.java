@@ -15,10 +15,10 @@ class RobotMotionDemoTest {
     @TempDir Path tmp;
     @BeforeAll static void nativePhysics(){NativeLibraryLoader.loadNativeLibrary("bulletjme",true);}
     String fixture(boolean differential,boolean mechanisms) {
-        String xml="<robot name=\"Motion fixture\"><link name=\"base\"><visual><geometry><box size=\".3 .2 .1\"/></geometry></visual></link>";
+        String xml="<robot name=\"Motion fixture\"><link name=\"base\"><visual><geometry><box size=\".3 .2 .06\"/></geometry></visual></link>";
         List<String> names=differential?List.of("leftDrive","rightDrive"):DriveGeometry.MOTORS;
         for(int i=0;i<names.size();i++) {
-            xml+="<link name=\"wheel"+i+"\"><visual><geometry><cylinder radius=\".045\" length=\".02\"/></geometry></visual></link>"
+            xml+="<link name=\"wheel"+i+"\"><visual><origin rpy=\"1.5707963267948966 0 0\"/><geometry><cylinder radius=\".045\" length=\".02\"/></geometry></visual></link>"
                 +"<joint name=\"wheel_joint"+i+"\" type=\"continuous\"><parent link=\"base\"/><child link=\"wheel"+i+"\"/><origin xyz=\""+(i<2?.1:-.1)+" "+(i%2==0?.13:-.13)+" 0\"/><axis xyz=\"0 1 0\"/></joint>"
                 +"<transmission name=\"wheel_tx"+i+"\"><joint name=\"wheel_joint"+i+"\"/><actuator name=\""+names.get(i)+"\"><mechanicalReduction>1</mechanicalReduction></actuator></transmission>";
         }
@@ -42,7 +42,7 @@ class RobotMotionDemoTest {
         var p=controller.session.profile("robot");var runtime=FieldPackage.map(p.get("runtime"));
         if(differential)runtime.put("drive",Map.of("type","differential","left_motor","leftDrive","right_motor","rightDrive","wheel_radius_m",.045,"track_width_m",.26,"left_shaft_sign",-1,"right_shaft_sign",1));
         if(mechanisms)runtime.put("servoPhysics",Map.of("gateServo",Map.of("stall_torque_nm",1.,"no_load_speed_rad_s",3.,"travel_rad",.5,"position_gain_per_s",8.,"velocity_gain_nm_per_rad_s",.2,"deadband_rad",.001)));
-        FieldPackage.map(p.get("parameters")).put("friction",0.);controller.update("robot",p);controller.compile("robot");return controller;
+        controller.update("robot",p);controller.compile("robot");return controller;
     }
     void complete(RobotMotionDemo demo) {
         for(int i=0;i<30000&&!demo.finished();i++)demo.tick();assertTrue(demo.finished());assertEquals("",demo.failure);
@@ -97,7 +97,7 @@ class RobotMotionDemoTest {
         String xml=fixture(true,false).replace("</robot>",joint("intake","continuous","0 0 1","-1","1","intakeMotor","0 0 .3")
             +joint("follower","continuous","0 0 1","-1","1",null,".1 0 .3").replace("<limit lower=\"-1\" upper=\"1\" effort=\"5\" velocity=\"2\"/>","<mimic joint=\"intake_joint\" multiplier=\"1\"/>")+"</robot>");
         Path zip=tmp.resolve("coupled.zip");try(var out=new ZipOutputStream(Files.newOutputStream(zip))){out.putNextEntry(new ZipEntry("model.urdf"));out.write(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8));out.closeEntry();}
-        var previousRuntime=c.session.profile("robot").get("runtime");c.load("robot","cad",zip,null);var p=c.session.profile("robot");p.put("runtime",previousRuntime);FieldPackage.map(p.get("parameters")).put("friction",0.);c.update("robot",p);c.compile("robot");var setup=c.motionSetup();
+        var previousRuntime=c.session.profile("robot").get("runtime");c.load("robot","cad",zip,null);var p=c.session.profile("robot");p.put("runtime",previousRuntime);c.update("robot",p);c.compile("robot");var setup=c.motionSetup();
         assertEquals(1,setup.plan().mechanisms.size());assertTrue(setup.plan().notes.stream().anyMatch(s->s.contains("follower_joint")&&s.contains("intake_joint")));
         try(var demo=new RobotMotionDemo(setup,new DesktopAssetManager(true))) {complete(demo);assertTrue(Math.abs(demo.robot.jointPosition("intake_joint"))>.05);assertEquals(demo.robot.jointPosition("intake_joint"),demo.robot.jointPosition("follower_joint"),.03);assertTrue(demo.actions.stream().noneMatch(a->a.label().startsWith("follower")));}
     }

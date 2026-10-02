@@ -31,6 +31,7 @@ public final class TorusRetentionProbe {
         var scene=new ImportedRobotScene(urdf,project.resolve(config.urdf),map,assets,config.vhacdMaxHulls,java.util.Set.copyOf(config.drive.motorNames()));
         if(config.robotProfile!=null)config.robotProfile.configure(scene);
         scene.tireContacts=true;scene.flexibleIntake=config.flexibleIntake;
+        scene.driveContacts=config.driveContacts;
         scene.collisionOmissions=config.collisionOmissions;
         robot=new ArticulatedRobot(scene,world,field,new Vector3f(0,(float)config.startHeightM,0));
         world.installTires(new TireDrive(world,map,scene,config.drive,config.tires));

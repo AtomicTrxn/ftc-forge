@@ -29,6 +29,7 @@ public class SimConfig {
     DriveGeometry driveGeometry;
     public MotorIntakeConfig intake;
     public TireDriveConfig tires;
+    DriveContactConfig driveContacts;
     public FlexibleIntakeConfig flexibleIntake;
     public TorusRetentionConfig torusRetention;
     public com.jme3.math.Vector3f gamePieceStart;
@@ -114,6 +115,7 @@ public class SimConfig {
             }
         }
         if (root.containsKey("drive")) config.drive = DifferentialDriveConfig.parse((Map<String, Object>) root.get("drive"));
+        if(root.containsKey("drive_contacts"))config.driveContacts=DriveContactConfig.parse(FieldPackage.map(root.get("drive_contacts")));
         if (root.containsKey("drive_geometry")) {
             if(config.drive!=null)throw new IllegalArgumentException("Differential dimensions belong in drive; drive_geometry is for Mecanum.");
             config.driveGeometry=DriveGeometry.parse(FieldPackage.map(root.get("drive_geometry")));

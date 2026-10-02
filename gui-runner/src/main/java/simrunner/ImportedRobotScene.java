@@ -141,8 +141,10 @@ final class ImportedRobotScene {
         }
     }
 
+    DriveContactConfig driveContacts;
+    final Map<String,String> wheelJoints=new LinkedHashMap<>();
     record Part(String name, Node visual, Transform origin, Vector3f com,
-                Quaternion principalRotation, double mass, Vector3f inertia, CollisionShape shape) { }
+                Quaternion principalRotation, double mass, Vector3f inertia, CollisionShape shape,Map<Integer,String> contactLinks) { }
     final Map<String, String> owners = new LinkedHashMap<>();
     final java.util.Set<String> wheelLinks = new java.util.HashSet<>();
 
@@ -166,9 +168,11 @@ final class ImportedRobotScene {
         owners.clear();
         wheelLinks.clear();
         assignParts(urdf.rootLink, urdf.rootLink, false);
+        wheelJoints.clear();
+        for(String name:wheelLinks){String current=name;while(!current.equals(urdf.rootLink)){String child=current;var joint=urdf.joints.values().stream().filter(j->j.child().equals(child)).findFirst().orElseThrow();if(isDriveWheel(joint)){wheelJoints.put(name,joint.name());break;}current=joint.parent();}}
     }
 
-    /** Weld fixed subtrees and keep wheel mass as ballast without wheel-ground traction. */
+    /** Weld fixed subtrees and wheel mass once; native wheel geometry is explicit opt-in. */
     List<Part> parts() throws Exception {
         root.updateGeometricState();
         if (tireContacts) driveWheels = TireDrive.layout(this);
@@ -209,9 +213,9 @@ final class ImportedRobotScene {
             }
             PrincipalInertia.Principal principal = aggregate.diagonalize(name);
             Quaternion principalInverse = principal.rotation().inverse();
-            CompoundCollisionShape compound = new CompoundCollisionShape();
+            CompoundCollisionShape compound = new CompoundCollisionShape();var contactLinks=new LinkedHashMap<Integer,String>();
             for (RobotUrdf.Link link : urdf.links.values()) {
-                if (!owners.get(link.name()).equals(name) || wheelLinks.contains(link.name())) continue;
+                if (!owners.get(link.name()).equals(name) || wheelLinks.contains(link.name())&&!wheelContactsEnabled()) continue;
                 Node node = linkNodes.get(link.name());
                 Quaternion relative = inverse.mult(node.getWorldRotation());
                 for (RobotUrdf.Collision collision : link.collisions()) {
@@ -220,14 +224,22 @@ final class ImportedRobotScene {
                     Vector3f translation = principalInverse.mult(offset);
                     Quaternion orientation = principalInverse.mult(relative.mult(rotation(collision.origin().rpy()))
                         .mult(shapeAxisRotation(collision.geometry())));
-                    compound.addChildShape(physicsShape(collision.geometry()), translation, orientation.toRotationMatrix());
+                    var shape=physicsShape(collision.geometry());
+                    if(wheelContactsEnabled())addContactShape(compound,shape,translation,orientation,link.name(),contactLinks);
+                    else compound.addChildShape(shape, translation, orientation.toRotationMatrix());
                 }
             }
             CollisionShape shape = compound.countChildren() == 0 ? new EmptyShape(false) : compound;
             result.add(new Part(name, originNode, origin, com, principal.rotation(), mass,
-                principal.moments(), shape));
+                principal.moments(), shape,Map.copyOf(contactLinks)));
         }
         return result;
+    }
+
+    boolean wheelContactsEnabled(){return driveContacts!=null&&driveContacts.enabled();}
+    private void addContactShape(CompoundCollisionShape into,CollisionShape shape,Vector3f offset,Quaternion rotation,String link,Map<Integer,String> children) {
+        if(shape instanceof CompoundCollisionShape compound)for(var child:compound.listChildren())addContactShape(into,child.getShape(),offset.add(rotation.mult(child.copyOffset(null))),rotation.mult(child.copyRotation(null)),link,children);
+        else {children.put(into.countChildren(),link);into.addChildShape(shape,offset,rotation.toRotationMatrix());}
     }
 
     private double rigidFraction(String name) {

@@ -27,6 +27,8 @@ The [robot measurement guide](gui-runner/ROBOT_MEASUREMENTS.md) adds operating w
 
 Guided robot setup also offers a [short motion demo](gui-runner/ROBOT_MOTION_DEMO.md): differential/tank forward, reverse and turns; configured Mecanum adds strafing. Powered mechanisms move separately through native physics. Assess each observed movement, follow a selectable correction path and retest only that movement/mechanism. Explicit feedback travels with exported robot settings; changed CAD/settings/hardware require fresh review.
 
+Fresh robot imports use [native wheel support and contact settings](gui-runner/DRIVE_CONTACTS.md): traction requires supported wheel collision shapes and respects floor grip, while belly scraping and wall friction remain active. The guide exposes saved tuning and contact diagnostics; existing reviewed models retain their previous mode until explicitly changed.
+
 Imported robot collision coverage is checked per rigid body before physics starts. The selector's **Review collisions** action shows actual native shapes for the selected robot and field; C toggles collision shapes and V toggles CAD visibility. Save a coverage report with `./gradlew :gui-runner:auditCollisions --args='/absolute/robotProject /absolute/report.json'`. See [collision review](gui-runner/COLLISION_REVIEW.md).
 
 To use your own robot, replace `gui-runner/sample-teamcode` in the commands with an absolute path or a path relative to the repository root. The second argument is the annotated OpMode's class name or display name. The headless runner accepts an optional third argument for watchdog timeout in milliseconds.

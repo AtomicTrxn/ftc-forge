@@ -71,6 +71,7 @@ public class PhysicsWorld {
     private com.jme3.math.Quaternion bodyToRobot = new com.jme3.math.Quaternion();
     private Vector3f robotOriginInBody = new Vector3f();
     private TireDrive tireDrive;
+    private DriveContacts driveContacts;
     private FlexibleIntake flexibleIntake;
     private float flexVisualTime;
     private float driveMassKg;
@@ -210,7 +211,9 @@ public class PhysicsWorld {
 
     private void applyDriveImpulse(float dt) {
         if (!driveControllerEnabled || dt <= 0 || !chassisControl.isDynamic()) return;
+        var support=driveContacts==null?null:driveContacts.refresh();
         if (tireDrive != null) { tireDrive.tick(dt); return; }
+        if(support!=null&&support.wheels().isEmpty())return;
         Vector3f desired = getChassisRotation().mult(new Vector3f(
             (float) driveTarget.vx, 0, (float) -driveTarget.vy));
         Vector3f actual = chassisControl.getLinearVelocity();
@@ -221,12 +224,32 @@ public class PhysicsWorld {
         Vector3f delta = error.mult(response);
         float maxDelta = (float) driveMaxAccelMps2 * dt;
         if (delta.length() > maxDelta) delta.normalizeLocal().multLocal(maxDelta);
-        chassisControl.applyCentralImpulse(delta.mult(driveMassKg));
+        Vector3f impulse=delta.mult(driveMassKg);
         float yawResponse = (float) -Math.expm1(-dt / yawResponseTimeS);
         float yawDelta = ((float) driveTarget.omega - chassisControl.getAngularVelocity().y) * yawResponse;
         float yawCap = (float) driveMaxYawAccelRadps2 * dt;
         yawDelta = Math.max(-yawCap, Math.min(yawCap, yawDelta));
-        chassisControl.applyTorqueImpulse(new Vector3f(0, yawDelta * driveYawInertia, 0));
+        float moment=yawDelta*driveYawInertia;
+        if(support!=null) {
+            double available=support.frictionImpulse(),availableMoment=support.momentImpulse();
+            if(availableMoment<=0)moment=0;
+            double scale=gripScale(impulse,moment,available,availableMoment);
+            impulse.multLocal((float)scale);moment*=scale;
+            double rolling=driveContacts.config.rollingResistanceCoefficient()*support.normalImpulse();
+            var planar=new Vector3f(actual.x,0,actual.z);float speed=planar.length();
+            if(speed>0)impulse.addLocal(planar.mult((float)(-Math.min(rolling,driveMassKg*speed)/speed)));
+            // Rolling drag follows the bounded motor request; braking still shares the same grip budget.
+            scale=gripScale(impulse,moment,available,availableMoment);
+            impulse.multLocal((float)scale);moment*=scale;
+        }
+        chassisControl.applyCentralImpulse(impulse);
+        chassisControl.applyTorqueImpulse(new Vector3f(0, moment, 0));
+    }
+
+    private static double gripScale(Vector3f impulse,float moment,double available,double availableMoment) {
+        if(available<=0)return 0;
+        double utilization=Math.hypot(impulse.length()/available,availableMoment>0?moment/availableMoment:0);
+        return utilization>1?1/utilization:1;
     }
 
     void setDriveAssemblyProperties(float massKg, float yawInertia) {
@@ -235,6 +258,8 @@ public class PhysicsWorld {
     }
 
     void installTires(TireDrive model) { tireDrive = model; }
+    void installDriveContacts(DriveContacts model){driveContacts=model;}
+    DriveContacts driveContacts(){return driveContacts;}
     TireDrive tireDrive() { return tireDrive; }
     void installFlexibleIntake(FlexibleIntake model) { flexibleIntake=model; }
     FlexibleIntake flexibleIntake() { return flexibleIntake; }
