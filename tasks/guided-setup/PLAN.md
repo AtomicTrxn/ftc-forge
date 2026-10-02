@@ -1,6 +1,6 @@
 # Guided import and simulation setup
 
-Status: approved by the user and implemented. Automated/native validation and completed desktop walkthroughs are recorded in RESULTS.md; final interaction checks remain pending after the Mac locked again.
+Status: approved by the user, implemented and validated. Automated/native validation and the completed desktop release checks are recorded in RESULTS.md.
 
 ## Objective
 

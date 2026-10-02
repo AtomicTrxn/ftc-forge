@@ -2,7 +2,7 @@
 
 Date: 2026-10-01 (updated after desktop walkthrough)
 
-Status: implemented with passing automated/native validation and substantial desktop interaction evidence. **Motor binding, final migration recheck and explicit OpMode launch remain outstanding after the Mac locked again; retain the PR as a draft until those checks finish.**
+Status: implemented and validated. Automated/native gates and the remaining interactive desktop release checks passed; ready to ship.
 
 ## Delivered
 
@@ -50,7 +50,9 @@ The guided tests cover conditional navigation, rejection of misleading completio
 12. Long parameter descriptions were clipped in table cells. A wrapped selection detail area shows the full explanation/provenance, and provenance receives more column width. The corrected layout was inspected and selection details exercised.
 13. After manually retaining old part settings, that part remained in the removal-acknowledgment queue. Migration now removes retained parts from that queue and drops empty acknowledgments; the earlier saved revision remains unchanged and the changed model still requires review. A dedicated Python regression passes. Piece-template choices and table rendering now use readable CAD/type names while preserving internal IDs.
 
-## Desktop interaction evidence and remaining gate
+14. A motor selected through the binding dialog and its generated gear ratio inherited a CAD provenance label. Binding now records the motor name as user supplied and the ratio as a provisional default; the final desktop panel verified both labels.
+
+## Desktop interaction evidence
 
 The Mac was unlocked for this follow-up. Plain Java processes appeared in native inventory but could not be selected by the desktop tool. Temporary local `jpackage` app bundles under ignored `.local/desktop-qa/` provided stable app identities. They run the same compiled wizard/model-preview/scene-preview entry points; the bundles are QA artifacts, not a new distribution feature. All mouse/keyboard actions used the Computer tool. Native preview child processes were also opened through the wizard; companion app bundles allowed visual inspection of those same entry points.
 
@@ -63,20 +65,15 @@ Actual walkthroughs completed:
 5. New field ZIP import, 2 m dimensions, changing the ball role from structure to independent piece using a dropdown, advanced return, readable physics help, fixed-floor/moving-piece native preview, explicit review and save. Both imported-field modes passed preflight after adjusting the robot pose to the smaller field.
 6. Switching from generic to imported field retained the old scene layout and offered a selectable replacement template. Selecting a replacement updated that placement; **Use model piece layout** then loaded the field's own piece layout for successful checking.
 7. Project folder selection, a missing `left_front_drive` error from compatibility checks, and recovery by selecting the valid project.
-8. Changed robot CAD import with a selected prior revision, renewed dimension confirmation, named **Use settings: base** migration and acknowledgment of the old removal queue. The redundant removal entry exposed item 13 above; automated validation of that correction is complete.
+8. Changed robot CAD import with a selected prior revision, renewed dimension confirmation, named **Use settings: base** migration and acknowledgment of the old removal queue. The redundant removal entry exposed item 13 above. Repeating the import on the corrected build cleared both pending choices after retaining base, with no redundant removal acknowledgment.
+9. Selected the movable wheel and bound it to project motor **left_front_drive**, inspected the changed model through native preview, saved the reviewed revision and rechecked the smaller imported-field scene. Piece table and replacement choices displayed **ball** while retaining the underlying source ID.
+10. Project checks discovered **Guided UI launch check** without creating its class-load or initialization markers. Selecting it and clicking **Use and run selected OpMode** created both markers (`loaded` and `init`), applied the saved scene with model-settings policy `profile`, and displayed successful launch. Simulation Finish completed.
+11. Imported the previously exported robot profile bundle through the UI; its intact collision review was reused and Next skipped directly to Finish. Importing identical original CAD with automatic reuse also retained review. Selecting **Generate fresh defaults** for that same CAD created an unreviewed draft and Next required size/orientation confirmation.
+12. On the final build, edited a saved model and bound its movable joint to **arm_motor**. The panel displayed **User supplied** for the motor name and **Default — provisional** for the generated ratio 1.0. The earlier reviewed revision and scene remain available; this last editable QA draft was saved separately.
 
 Private evidence: `.local/desktop-qa/models/sessions/3929eec5-b6e4-4694-8499-a9d84de6630f.json` records completed robot preparation; `355ad7a3-140e-415f-8c57-f4df3a2d42f7.json` records simulation/field/migration work. Their native check logs and scene JSON are stored beside them. UI states/screenshots are visible in the testing conversation. Synthetic test CAD/projects and the exported robot bundle remain ignored under `.local/desktop-qa/fixtures/`. Existing real REV DUO/BIOBUZZ regression evidence remains as recorded above.
 
-The Mac locked again immediately before the motor-binding interaction. Native inventory returned **“The Mac is locked and automatic unlock could not unlock it.”** The user was asked to unlock while remaining code fixes and automated checks continued.
-
-Remaining desktop checks before marking ready/merging:
-
-- Reopen the latest build and verify the corrected migration queue no longer calls a retained part removed; verify the readable piece-template choice.
-- Bind the movable robot joint to a selected project motor, prepare/review the changed model, recheck its scene and discover OpModes.
-- Confirm discovery has not initialized the local probe TeamCode, then explicitly **Use and run selected OpMode** and verify the probe's initialization marker.
-- Exercise portable bundle import and explicit fresh-default selection through the UI; their integrity/recovery behavior already passes automated tests. Reset pose behavior is validated by native tests/probes.
-
-Do not count these remaining checks as passed or claim full interactive QA until an unlocked desktop permits completion.
+Desktop lock interruptions and a temporary automatic-approval usage-limit error delayed testing. After desktop/tool access resumed, all release checks above were completed. Probe markers are `.local/desktop-qa/fixtures/team/guided-class-loaded.txt` and `guided-launch-init.txt`; the fresh-import session is `5b6b51c9-5ddb-4223-a2cd-f0889d03802a.json`. The final GUI build and its 65 tests passed after the provenance correction; the unchanged core/physics suites retain their 30 passing results.
 
 ## Limits
 
