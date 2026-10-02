@@ -68,8 +68,9 @@ final class RobotMotionReview {
     }
     static String contactSummary(Map<String,Object> observation) {
         if(!observation.containsKey("supported_wheels"))return "";
+        String grip=observation.containsKey("wheel_grip")?"\nSimulated effective grip (wheel × surface): "+String.join(", ",FieldPackage.maps(observation.get("wheel_grip")).stream().map(w->String.format(Locale.ROOT,"%s %.3f",w.get("joint"),FieldPackage.num(w,"effective_friction"))).toList()):"";
         return "\nSupported wheels: "+observation.get("supported_wheels")+" · chassis support contacts: "+observation.get("scraping_contacts")
-            +"\n"+observation.getOrDefault("support_diagnosis","");
+            +grip+"\n"+observation.getOrDefault("support_diagnosis","");
     }
     static String travel(Map<String,Object> o){
         if(o.containsKey("forward_m"))return String.format(Locale.ROOT,"Forward %.3f m · left %.3f m · turn %.1f°",FieldPackage.num(o,"forward_m"),FieldPackage.num(o,"left_m"),Math.toDegrees(FieldPackage.num(o,"yaw_rad")));

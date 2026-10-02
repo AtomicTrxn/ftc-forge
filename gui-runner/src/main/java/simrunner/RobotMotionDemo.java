@@ -176,7 +176,8 @@ final class RobotMotionDemo implements AutoCloseable {
             double sign=a.drive.turn()!=0?a.drive.turn():a.drive.left()!=0?a.drive.left():a.drive.forward();
             moved=Math.abs(value)>(a.drive.turn()!=0?.02:.005);correct=value*sign>0;
             row.put("forward_m",(double)local.x);row.put("left_m",(double)-local.z);row.put("yaw_rad",yaw);
-            if(world.driveContacts()!=null){var support=world.driveContacts().snapshot();row.put("supported_wheels",support.wheels().size());row.put("scraping_contacts",support.scrapingContacts());row.put("support_diagnosis",support.diagnosis());}
+            if(world.driveContacts()!=null){var support=world.driveContacts().snapshot();row.put("supported_wheels",support.wheels().size());row.put("scraping_contacts",support.scrapingContacts());row.put("support_diagnosis",support.diagnosis());
+                row.put("wheel_grip",support.wheels().stream().map(w->Map.of("joint",w.joint(),"effective_friction",w.normalImpulse()>0?w.frictionImpulse()/w.normalImpulse():0.)).toList());}
         } else {
             double q=robot.jointPosition(a.mechanism.joint().name());double value=q-startJoint;
             moved=peakJoint>(a.mechanism.joint().type().equals("prismatic")?.002:.01);correct=(a.target-startJoint)*value>=0;

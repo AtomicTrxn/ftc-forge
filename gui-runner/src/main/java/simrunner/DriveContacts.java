@@ -41,9 +41,11 @@ final class DriveContacts implements ContactListener {
         boolean supported=upward(a,b,point);
         // Restore Bullet's material combination when a persistent wheel contact changes surface/normal.
         // Only upward static support transfers tangential response to our drive solver.
-        ManifoldPoints.setCombinedFriction(point,supported?0:friction(a.getFriction()*b.getFriction()));
-        ManifoldPoints.setCombinedRollingFriction(point,supported?0:friction(a.getRollingFriction()*b.getFriction()+b.getRollingFriction()*a.getFriction()));
-        ManifoldPoints.setCombinedSpinningFriction(point,supported?0:friction(a.getSpinningFriction()*b.getFriction()+b.getSpinningFriction()*a.getFriction()));
+        float aMu=a.getFriction(),bMu=b.getFriction();
+        if(a==world.chassisBody())aMu=(float)config.friction(joints.get(name),aMu);else bMu=(float)config.friction(joints.get(name),bMu);
+        ManifoldPoints.setCombinedFriction(point,supported?0:friction(aMu*bMu));
+        ManifoldPoints.setCombinedRollingFriction(point,supported?0:friction(a.getRollingFriction()*bMu+b.getRollingFriction()*aMu));
+        ManifoldPoints.setCombinedSpinningFriction(point,supported?0:friction(a.getSpinningFriction()*bMu+b.getSpinningFriction()*aMu));
     }
     public void onContactStarted(long manifold) {
         var a=PhysicsCollisionObject.findInstance(PersistentManifolds.getBodyAId(manifold));var b=PhysicsCollisionObject.findInstance(PersistentManifolds.getBodyBId(manifold));
@@ -60,7 +62,7 @@ final class DriveContacts implements ContactListener {
                 if(!upward(a,b,point))continue;String name=link(a,point),joint=name==null?null:joints.get(name);
                 if(joint==null){scraping++;continue;}
                 ownFriction(a,b,point);double normal=Math.max(0,ManifoldPoints.getAppliedImpulse(point));
-                var other=a==world.chassisBody()?b:a;double mu=world.chassisBody().getFriction();
+                var other=a==world.chassisBody()?b:a;double mu=config.friction(joint,world.chassisBody().getFriction());
                 double impulse=normal*Math.min(10,Math.max(0,mu*other.getFriction()));
                 var position=new Vector3f();if(a==world.chassisBody())ManifoldPoints.getPositionWorldOnA(point,position);else ManifoldPoints.getPositionWorldOnB(point,position);
                 var offset=position.subtract(world.chassisBody().getPhysicsLocation());double radius=Math.hypot(offset.x,offset.z);

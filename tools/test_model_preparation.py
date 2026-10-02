@@ -22,6 +22,45 @@ class ModelPreparationTest(unittest.TestCase):
         bundle=self.root/'contacts.zip';m.export_bundle(saved,bundle);restored=m.import_bundle(bundle,self.root/'portable');self.assertEqual(cfg,m.read(restored)['runtime']['drive_contacts'])
         self.zip(URDF.replace('0 0 .06','0 0 .07'));migrated=m.import_zip(self.package,self.root/'portable','robot',restored);self.assertEqual(cfg,m.read(migrated)['runtime']['drive_contacts']);self.assertFalse(m.verify_receipt(migrated)['ready']);self.assertEqual(before,saved.read_bytes())
         edited=m.read(migrated);edited['runtime']['drive_contacts']['max_contact_gap_m']=.1;m.atomic_json(migrated,edited);self.assertRaises(ValueError,m.compile_profile,migrated)
+    def test_independent_wheel_grip_bundle_reuse_and_renamed_cad_preserve_tuning(self):
+        saved,xml=self.measured_robot();p=m.fork_draft(saved,self.library);data=m.read(p)
+        data['runtime']['drive_contacts']['wheel_friction']=[{'joint':'wheel_joint','friction':.91}]
+        data['provenance']['runtime/drive_contacts/wheel_friction/0/friction']='measured manually: tread/field sliding test'
+        m.atomic_json(p,data);saved=self.ready(p);before=saved.read_bytes();bundle=self.root/'grip.zip'
+        m.export_bundle(saved,bundle);restored=m.import_bundle(bundle,self.root/'portable');self.assertEqual(data['runtime'],m.read(restored)['runtime'])
+        self.assertEqual(data['provenance'],m.read(restored)['provenance']);self.assertTrue(m.verify_receipt(restored)['ready'])
+        self.assertEqual(saved,self.load());self.zip(xml.replace('wheel~left','renamed_wheel').replace('wheel_joint','renamed_joint'))
+        changed=m.import_zip(self.package,self.root/'portable','robot',restored);profile=m.read(changed)
+        self.assertEqual([{'joint':'renamed_joint','friction':.91}],profile['runtime']['drive_contacts']['wheel_friction'])
+        self.assertEqual('measured manually: tread/field sliding test',profile['provenance']['runtime/drive_contacts/wheel_friction/0/friction'])
+        self.assertFalse(m.verify_receipt(changed)['ready']);self.assertEqual(before,saved.read_bytes())
+    def test_missing_grip_joint_can_select_a_replacement_without_disabling_native_support(self):
+        saved,xml=self.measured_robot();p=m.fork_draft(saved,self.library);data=m.read(p);data['runtime']['drive_contacts']['wheel_friction']=[{'joint':'wheel_joint','friction':.81}];m.atomic_json(p,data);saved=self.ready(p)
+        self.zip(xml.replace('wheel_joint','replacement_joint').replace('radius=".04"','radius=".06"'));q=self.load(reuse=saved)
+        pending=m.read(q)['migration']['pending'];i=next(i for i,item in enumerate(pending) if item.get('runtime_path'))
+        self.assertIn('Map to: replacement_joint',pending[i]['options']);self.assertIn('Remove saved wheel grip override',pending[i]['options']);self.assertFalse(any('Disable saved model' in c for c in pending[i]['options']))
+        m.resolve_migration(q,i,'Map to: replacement_joint');cfg=m.read(q)['runtime']['drive_contacts'];self.assertTrue(cfg['enabled']);self.assertEqual([{'joint':'replacement_joint','friction':.81}],cfg['wheel_friction']);self.assertFalse(m.verify_receipt(q)['ready'])
+    def test_removing_multiple_missing_grips_reindexes_choices_and_keeps_other_wheels(self):
+        xml='<robot name="wheels"><link name="base"><visual><geometry><box size=".3 .2 .06"/></geometry></visual></link>'
+        parts=[]
+        for i in range(3):
+            part=f'<link name="wheel{i}"><visual><geometry><sphere radius="{.04+i*.01}"/></geometry></visual></link><joint name="joint{i}" type="continuous"><parent link="base"/><child link="wheel{i}"/><origin xyz="{i*.1} .2 0"/></joint><transmission name="tx{i}"><joint name="joint{i}"/><actuator name="motor{i}"/></transmission>'
+            parts.append(part)
+        self.zip(xml+''.join(parts)+'</robot>');p=self.load();data=m.read(p)
+        data['runtime']['drive_contacts']['wheel_friction']=[{'joint':f'joint{i}','friction':.5+i*.1} for i in range(3)]
+        for i in range(3):data['provenance'][f'runtime/drive_contacts/wheel_friction/{i}/friction']=f'measured wheel {i}'
+        m.atomic_json(p,data);saved=self.ready(p);self.zip(xml+parts[2]+'</robot>');q=self.load(reuse=saved)
+        for _ in range(2):
+            pending=m.read(q)['migration']['pending'];i=next(i for i,item in enumerate(pending) if item.get('runtime_path'))
+            self.assertEqual(['Remove saved wheel grip override'],pending[i]['options']);m.resolve_migration(q,i,'Remove saved wheel grip override')
+        profile=m.read(q);cfg=profile['runtime']['drive_contacts'];self.assertTrue(cfg['enabled']);self.assertEqual([{'joint':'joint2','friction':.7}],cfg['wheel_friction'])
+        self.assertEqual('measured wheel 2',profile['provenance']['runtime/drive_contacts/wheel_friction/0/friction']);self.assertNotIn('runtime/drive_contacts/wheel_friction/1/friction',profile['provenance'])
+        pending=profile['migration']['pending'];i=next(i for i,item in enumerate(pending) if item.get('removed'));m.resolve_migration(q,i,'Acknowledge removed parts');self.assertFalse(m.verify_receipt(q)['ready'])
+    def test_invalid_wheel_grip_settings_are_rejected(self):
+        saved,_=self.measured_robot();p=m.fork_draft(saved,self.library);original=m.read(p)
+        for value in ['bad',[{'joint':'wheel_joint','friction':True}],[{'joint':'wheel_joint','friction':-1}],[{'joint':'wheel_joint','friction':2.1}],[{'joint':'missing','friction':.6}],[{'joint':'wheel_joint','friction':.6}]*2]:
+            data=copy.deepcopy(original);data['runtime']['drive_contacts']['wheel_friction']=value;m.atomic_json(p,data)
+            with self.assertRaises(ValueError):m.compile_profile(p)
     def test_legacy_modes_do_not_change_on_capture_reimport_or_migration(self):
         p=self.load();data=m.read(p);data['runtime'].pop('drive_contacts');m.atomic_json(p,data);saved=self.ready(p);self.assertNotIn('drive_contacts',m.read(self.load())['runtime'])
         self.zip(URDF.replace('0 0 .06','0 0 .07'));self.assertNotIn('drive_contacts',m.read(self.load(reuse=saved))['runtime'])
