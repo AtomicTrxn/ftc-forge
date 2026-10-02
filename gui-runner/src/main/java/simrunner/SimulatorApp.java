@@ -344,40 +344,16 @@ public class SimulatorApp extends SimpleApplication {
             }
             System.out.println("[IMPORT] Physics chassis from " + urdf.name + ", mass=" + urdf.totalMassKg() + "kg");
             if (differential == null) {
-                double[] wheelX = new double[4], wheelY = new double[4];
-                boolean[] wheelFound = new boolean[4];
-                String[] drives = {"left_front_drive", "right_front_drive", "left_back_drive", "right_back_drive"};
-                for (RobotUrdf.Transmission tx : urdf.transmissions.values()) {
-                    RobotUrdf.Joint joint = urdf.joints.get(tx.joint());
-                    if (!joint.type().equals("continuous")) continue;
-                    for (RobotUrdf.Actuator actuator : tx.actuators()) {
-                        for (int i = 0; i < 4; i++) {
-                            if (!actuator.name().equals(drives[i])) continue;
-                            if (joint.parent().equals(urdf.rootLink)) {
-                                wheelX[i] = joint.origin().xyz()[0];
-                                wheelY[i] = joint.origin().xyz()[1];
-                                wheelFound[i] = true;
-                            }
-                            for (RobotUrdf.Collision c : urdf.links.get(joint.child()).collisions()) {
-                                if (c.geometry().kind().equals("cylinder")) wheelRadii[i] = c.geometry().dimensions()[0];
-                            }
-                        }
-                    }
-                }
-                if (wheelFound[0] && wheelFound[1] && wheelFound[2] && wheelFound[3]) {
-                    trackWidthM = (Math.abs(wheelY[0] - wheelY[1]) + Math.abs(wheelY[2] - wheelY[3])) / 2;
-                    wheelBaseM = (Math.abs(wheelX[0] - wheelX[2]) + Math.abs(wheelX[1] - wheelX[3])) / 2;
-                    if (trackWidthM <= 0 || wheelBaseM <= 0)
-                        throw new IllegalArgumentException("Imported drive-wheel layout has zero track width or wheelbase");
-                    System.out.println("[IMPORT] Mecanum track=" + trackWidthM + "m wheelbase=" + wheelBaseM + "m");
-                } else {
-                    System.out.println("[WARN] Could not derive all four drive-wheel positions from chassis-child joints; using preset kinematics dimensions.");
-                }
+                var dimensions=DriveGeometry.resolve(urdf,simConfig.driveGeometry);
+                trackWidthM=dimensions.trackWidthM();wheelBaseM=dimensions.wheelbaseM();
+                for(int i=0;i<4;i++)wheelRadii[i]=dimensions.wheelRadii().get(i);
+                System.out.println("[IMPORT] Mecanum track="+trackWidthM+"m wheelbase="+wheelBaseM+"m; "+(simConfig.driveGeometry!=null?"explicit measured/configured dimensions":dimensions.positionsFromCad()?"CAD centers":"preset center spacing"));
             }
         } else {
             buildRobot();
             Vector3f start=simConfig.robotStart==null?new Vector3f(0,.1f,0):simConfig.robotStart;validateStart(start);
-            physicsWorld.buildChassis(robotNode, CHASSIS_MASS_KG,start);
+            physicsWorld.buildChassis(robotNode, simConfig.totalMassKg==null?CHASSIS_MASS_KG:simConfig.totalMassKg,start);
+            if(differential==null){var dimensions=DriveGeometry.resolve(null,simConfig.driveGeometry);trackWidthM=dimensions.trackWidthM();wheelBaseM=dimensions.wheelbaseM();for(int i=0;i<4;i++)wheelRadii[i]=dimensions.wheelRadii().get(i);}
             physicsWorld.chassisBody().setPhysicsRotation(new Quaternion().fromAngleAxis(simConfig.robotYawRad,Vector3f.UNIT_Y));
         }
         {

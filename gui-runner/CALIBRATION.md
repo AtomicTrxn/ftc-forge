@@ -2,6 +2,8 @@
 
 The simulator's default battery, motor friction, and drive-response values are estimates. A calibration profile replaces them for one team project. The process needs measurements from the physical robot; synthetic tests verify the fitting code but cannot establish real-world accuracy.
 
+Start with the [robot measurement guide](ROBOT_MEASUREMENTS.md): weigh the operating robot, measure wheel diameter/center spacing, and verify motor bindings. **Measure robot and verify motors…** is available from guided robot Physics assumptions and Finish. It saves manual values with the reusable robot profile; recording-derived response fitting below is a separate step.
+
 ## Record telemetry
 
 Copy [`CalibrationRecorder.java`](sample-teamcode/TeamCode/src/main/java/org/firstinspires/ftc/teamcode/CalibrationRecorder.java) into your Android TeamCode source tree. It uses FTC SDK `DcMotorEx`, `HardwareMap`, and `CurrentUnit`. Create it once in an OpMode and close it when recording ends:

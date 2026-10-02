@@ -48,6 +48,13 @@ final class GuidedSetupController {
         FieldPackage.map(session.data.get("models")).put(kind,session.file.getParent().relativize(p.toRealPath()).toString());session.save();
     }
     void compile(String kind) throws Exception {if(!session.ready(kind))models.run("compile",session.modelPath(kind).toString());validateRuntime(session.modelPath(kind));}
+    void measurements(RobotMeasurements.Entry entry) throws Exception {
+        if(entry.empty())return;
+        var measured=RobotMeasurements.apply(session.profile("robot"),entry);
+        update("robot",measured);
+        session.data.put("scene_validation",null);session.data.remove("project_check");session.data.remove("opmodes");session.save();
+        compile("robot");
+    }
     private void validateRuntime(Path path) throws Exception {
         var model=new ModelProfile(path,false);if(!model.kind.equals("robot"))return;
         var root=new LinkedHashMap<>(model.runtime);root.put("urdf",model.artifact("robot").toString());var config=SimConfig.parse(model.directory,root);

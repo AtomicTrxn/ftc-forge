@@ -26,6 +26,7 @@ public final class ModelValidation {
                     else new ModelFieldScene(profile,true,world,root,assets);
                 } else {
                     Path urdfFile=profile.artifact("robot");var urdf=RobotUrdf.parse(urdfFile);
+                    if(profile.runtime.containsKey("total_mass_kg"))urdf=urdf.withTotalMassKg(FieldPackage.num(profile.runtime,"total_mass_kg"));
                     Set<String> drives=new HashSet<>();
                     if(profile.runtime.containsKey("drive")){var d=FieldPackage.map(profile.runtime.get("drive"));drives.add(FieldPackage.str(d,"left_motor"));drives.add(FieldPackage.str(d,"right_motor"));}
                     else drives.addAll(List.of("left_front_drive","right_front_drive","left_back_drive","right_back_drive"));
