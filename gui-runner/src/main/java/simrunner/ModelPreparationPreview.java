@@ -12,14 +12,14 @@ import java.util.Map;
 
 /** Live profile preview. Editor compilation replaces receipt atomically; view reloads that revision. */
 public final class ModelPreparationPreview extends SimpleApplication {
-    private Path file,png;private String receiptHash="";private float refresh;private int frames;
+    private String modelStatus="";private Path file,png,view;private String viewHash="";private Node guides;private String receiptHash="";private float refresh;private int frames;
     private ModelValidation.Prepared model;private CollisionOverlay overlay;private BitmapText status;
     private Node fallback;
     private com.jme3.input.ChaseCamera orbit;private boolean cad=true;
     private com.jme3.app.state.ScreenshotAppState screenshot;
     public static void main(String[] args){
-        if(args.length<1||args.length>2)throw new IllegalArgumentException("Usage: ModelPreparationPreview <draft/profile.json> [screenshot.png]");
-        var app=new ModelPreparationPreview();app.file=Path.of(args[0]).toAbsolutePath();if(args.length==2)app.png=Path.of(args[1]).toAbsolutePath();
+        if(args.length<1||args.length>4)throw new IllegalArgumentException("Usage: ModelPreparationPreview <draft/profile.json> [screenshot.png]");
+        var app=new ModelPreparationPreview();app.file=Path.of(args[0]).toAbsolutePath();for(int i=1;i<args.length;i++){if(args[i].equals("--view"))app.view=Path.of(args[++i]);else app.png=Path.of(args[i]).toAbsolutePath();}
         var settings=new com.jme3.system.AppSettings(true);settings.setTitle("FTC Forge — model preparation");settings.setResolution(1280,800);app.setSettings(settings);app.setShowSettings(false);app.setPauseOnLostFocus(false);app.start();
     }
     @Override public void simpleInitApp(){
@@ -39,10 +39,11 @@ public final class ModelPreparationPreview extends SimpleApplication {
             if(model!=null){model.root.removeFromParent();model.close();}model=fresh;cad=true;model.root.addLight(new com.jme3.light.AmbientLight(new ColorRGBA(.65f,.65f,.65f,1)));model.root.addLight(new com.jme3.light.DirectionalLight(new Vector3f(-1,-2,-1).normalizeLocal(),ColorRGBA.White));rootNode.attachChild(model.root);
             model.root.updateGeometricState();
             float radius=1;Vector3f center=new Vector3f();if(model.root.getWorldBound() instanceof BoundingBox box){radius=Math.max(.01f,Math.max(box.getXExtent(),Math.max(box.getYExtent(),box.getZExtent())));center=box.getCenter().clone();}
+            if(guides!=null)guides.removeFromParent();guides=PreviewGuides.build(assetManager,radius);rootNode.attachChild(guides);viewHash="";
             cam.setFrustumPerspective(45,(float)cam.getWidth()/cam.getHeight(),Math.max(.001f,radius/100),Math.max(10,radius*100));
             if(orbit==null)orbit=new com.jme3.input.ChaseCamera(cam,model.root,inputManager);else orbit.setSpatial(model.root);orbit.setLookAtOffset(center);orbit.setDefaultDistance(radius*3.5f);orbit.setMinDistance(radius*.2f);orbit.setMaxDistance(radius*20);orbit.setDefaultHorizontalRotation(.75f);orbit.setDefaultVerticalRotation(.5f);orbit.setDragToRotate(true);
             overlay=new CollisionOverlay(model.space,model.root,assetManager);overlay.setVisible(true);overlay.update();model.writeProof();
-            status.setText(model.profile.name+" | "+model.profile.kind+" | "+model.space.countRigidBodies()+" native bodies\nMeters, scale 1 | drag: orbit | scroll: zoom | C: shapes | V: CAD\nUnpowered preview; inspect gaps, openings and thin surfaces before Save reviewed.");
+            modelStatus=model.profile.name+" | "+model.profile.kind+" | "+model.space.countRigidBodies()+" native bodies\nMeters, scale 1 | red X forward, green Y left, blue Z up\nDrag: orbit | scroll: zoom | C: shapes | V: CAD\nUnpowered preview; inspect gaps, openings and thin surfaces before Save reviewed.";status.setText(modelStatus);
         }catch(Exception e){
             if(model!=null){model.root.removeFromParent();model.close();model=null;overlay=null;}
             if(fallback!=null)fallback.removeFromParent();
@@ -57,6 +58,12 @@ public final class ModelPreparationPreview extends SimpleApplication {
         }
     }
 
-    @Override public void simpleUpdate(float dt){refresh+=dt;if(refresh>1){refresh=0;reload();}if(overlay!=null)overlay.update();if(screenshot!=null){if(++frames==15)screenshot.takeScreenshot();if(frames==25)stop();}}
+    private void focus(){
+        if(view==null||model==null||!Files.isRegularFile(view))return;
+        try{String hash=ModelProfile.hash(view);if(hash.equals(viewHash))return;viewHash=hash;var data=simcore.MiniJson.parseObject(Files.readString(view));String link=data.getOrDefault("link","").toString();String owner=FieldPackage.map(model.profile.receipt.get("body_grouping")).getOrDefault(link,link).toString();Spatial visual=model.root.getChild(link);while(visual!=null&&!visual.getName().startsWith("body-"))visual=visual.getParent();if(visual!=null)owner=visual.getName().substring(5);overlay.focus(owner);
+            for(var body:model.space.getRigidBodyList())if(body instanceof com.jme3.bullet.control.RigidBodyControl c&&c.getSpatial()!=null&&c.getSpatial().getName().equals("body-"+owner)){orbit.setLookAtOffset(body.getPhysicsLocation());float radius=.2f;var bounds=com.jme3.bullet.util.DebugShapeFactory.getDebugShape(body.getCollisionShape());bounds.updateGeometricState();if(bounds.getWorldBound() instanceof BoundingBox b)radius=Math.max(.03f,Math.max(b.getXExtent(),Math.max(b.getYExtent(),b.getZExtent())));orbit.setDefaultDistance(radius*4);status.setText(modelStatus+"\nFocused: "+link+" (magenta body)");break;}
+        }catch(Exception ignored){}
+    }
+    @Override public void simpleUpdate(float dt){refresh+=dt;if(refresh>1){refresh=0;reload();focus();}if(overlay!=null)overlay.update();if(screenshot!=null){if(++frames==15)screenshot.takeScreenshot();if(frames==25)stop();}}
     @Override public void destroy(){if(model!=null)model.close();super.destroy();}
 }

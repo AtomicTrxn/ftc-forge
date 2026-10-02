@@ -22,7 +22,10 @@ final class ModelFieldScene {
         profile=p;
         if(pieces&&!layout.isEmpty()){var sources=new HashSet<String>();for(var part:FieldPackage.maps(FieldPackage.map(p.receipt.get("artifacts")).get("pieces")))sources.add(FieldPackage.str(part,"id"));for(var entry:layout.entrySet()){var value=FieldPackage.map(entry.getValue());if(!Boolean.FALSE.equals(value.get("enabled"))&&!sources.contains(value.getOrDefault("source_id",entry.getKey()).toString()))throw new IllegalArgumentException("Missing scene piece template: "+entry.getKey()+". Open the scene editor to select a replacement.");}}
         var h=FieldPackage.vector(p.parameters.get("field_half_extents_m"),2);halfExtents=new Vector3f((float)h[0],0,(float)h[1]);
-        build(p.artifact("field"),new Vector3f(),new Quaternion(),true,primary,root,assets);
+        var structure=RobotUrdf.parse(p.artifact("field"));
+        if(structure.links.values().stream().allMatch(link->link.massKg()==0&&link.collisions().isEmpty())){
+            var visual=new ImportedRobotScene(structure,p.artifact("field"),new HardwareMap(),assets,8,Set.of());root.attachChild(visual.root);
+        }else build(p.artifact("field"),new Vector3f(),new Quaternion(),true,primary,root,assets);
         if("generated".equals(p.parameters.get("floor_strategy"))) {
             float thickness=(float)FieldPackage.num(p.parameters,"floor_thickness_m"),top=(float)FieldPackage.num(p.parameters,"floor_top_m");
             var node=new Node("generated preparation floor");var shape=new com.jme3.bullet.collision.shapes.BoxCollisionShape(new Vector3f(halfExtents.x,thickness/2,halfExtents.z));shape.setMargin((float)FieldPackage.num(p.parameters,"floor_margin_m"));

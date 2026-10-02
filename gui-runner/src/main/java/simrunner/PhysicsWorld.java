@@ -123,7 +123,9 @@ public class PhysicsWorld {
      * convex hulls approximate the ring shape reasonably -- exercising the real pipeline
      * rather than a shape that wouldn't have needed it.
      */
-    public void buildGamePiece(Vector3f position) {
+    public void buildGamePiece(Vector3f position) { buildGamePiece("practice-torus",position); }
+
+    void buildGamePiece(String id, Vector3f position) {
         Torus torusMesh = new Torus(24, 12, 0.03f, 0.09f);
         gamePieceNode = new Node("game-piece");
         Geometry geom = new Geometry("game-piece-mesh", torusMesh);
@@ -137,7 +139,7 @@ public class PhysicsWorld {
         gamePieceNode.addControl(gamePieceControl);
         gamePieceControl.setPhysicsLocation(position);
         physicsSpace.add(gamePieceControl);
-        registerPiece("practice-torus","torus",gamePieceNode,gamePieceControl);
+        registerPiece(id,"torus",gamePieceNode,gamePieceControl);
     }
 
     /** Real V-HACD decomposition (Vhacd4, bundled in Minie/Libbulletjme per R2) -- not a bounding-box or single-hull approximation. */

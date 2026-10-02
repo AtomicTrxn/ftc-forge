@@ -46,6 +46,11 @@ public class SimConfig {
     public static SimConfig load(Path projectRoot) throws IOException {
         Path configPath = projectRoot.resolve("sim.config");
         Map<String, Object> root = MiniJson.parseObject(Files.readString(configPath));
+        return parse(projectRoot,root);
+    }
+
+    static SimConfig parse(Path projectRoot, Map<String,Object> input) throws IOException {
+        Map<String,Object> root=new LinkedHashMap<>(input);
         try {if(root.get("scene_profile") instanceof String scene)root=SceneProfile.apply(projectRoot.resolve(scene).toRealPath(),root);}catch(Exception e){throw new IOException("Scene profile: "+e.getMessage(),e);}
         ModelProfile model=null;
         if(root.get("robot_model_profile") instanceof String ref)try {
