@@ -73,4 +73,11 @@ class GuidedSetupTest {
     @Test void parameterLabelsAndSessionVersionProvideActionableContext()throws Exception {
         assertTrue(GuidedParameterPanel.label("entities/wheel/settings/mass_kg").contains("kg"));assertTrue(GuidedParameterPanel.help("collision_strategy").contains("openings"));var c=controller();c.session.data.put("schema_version",999);c.session.save();assertThrows(IllegalArgumentException.class,()->new GuidedSetupSession(c.session.file,true));
     }
+    @Test void backgroundWorkRestoresSpinnerEditorsAndKeepsUnavailableControlsDisabled()throws Exception {
+        javax.swing.SwingUtilities.invokeAndWait(()->{
+            var panel=new javax.swing.JPanel();var spinner=new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(0.,-100.,100.,.01));var unavailable=new javax.swing.JButton("Unavailable");unavailable.setEnabled(false);panel.add(spinner);panel.add(unavailable);
+            var editor=((javax.swing.JSpinner.DefaultEditor)spinner.getEditor()).getTextField();assertTrue(editor.isEnabled());var states=new IdentityHashMap<java.awt.Component,Boolean>();
+            GuidedSetupWizard.setControls(panel,false,states);assertFalse(editor.isEnabled());GuidedSetupWizard.setControls(panel,true,states);assertTrue(spinner.isEnabled());assertTrue(editor.isEnabled(),"Users must still be able to type a placement after a scene check.");assertFalse(unavailable.isEnabled());assertTrue(states.isEmpty());
+        });
+    }
 }

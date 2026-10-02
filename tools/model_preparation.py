@@ -596,7 +596,11 @@ def resolve_migration(path,index,choice):
         # Changed geometry never silently retains a box's old dimensions.
         p['entities'][name]['settings']['collision_strategy']='visual'
         p['entities'][name]['assumptions'].append('Migrated settings; regenerated collision geometry requires review')
-    p['migration']['decisions'].append({**item,'selected':choice});p['migration']['pending'].pop(index);p['review']={'state':'draft'};atomic_json(path,p);compile_profile(path)
+        for pending in p['migration']['pending']:
+            if 'removed' in pending:pending['removed']=[n for n in pending['removed'] if n!=old]
+    p['migration']['decisions'].append({**item,'selected':choice});p['migration']['pending'].pop(index)
+    p['migration']['pending']=[q for q in p['migration']['pending'] if 'removed' not in q or q['removed']]
+    p['review']={'state':'draft'};atomic_json(path,p);compile_profile(path)
 
 
 def save_revision(path,library,reviewed=False):

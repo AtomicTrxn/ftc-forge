@@ -87,7 +87,7 @@ final class GuidedSetupController {
     Map<String,Object> sourcePieces(String pieceSet) throws Exception {
         if("generic".equals(session.reference("field")))return PracticePieces.layout(pieceSet.equals("torus"),session.profile("robot").containsKey("runtime")&&FieldPackage.map(session.profile("robot").get("runtime")).containsKey("flexible_intake"));
         var p=new ModelProfile(session.modelPath("field"),true);List<Map<String,Object>> parts=p.legacyField()?new FieldPackage(p.artifact("field")).instances.stream().filter(i->"piece".equals(i.get("owner"))).toList():FieldPackage.maps(FieldPackage.map(p.receipt.get("artifacts")).get("pieces"));
-        var out=new LinkedHashMap<String,Object>();for(var part:parts){String id=FieldPackage.str(part,"id");out.put(id,new LinkedHashMap<>(Map.of("source_id",id,"enabled",true,"xyz_m",part.get("xyz_m"),"rpy_rad",part.get("rpy_rad"))));}return out;
+        var out=new LinkedHashMap<String,Object>();for(var part:parts){String id=FieldPackage.str(part,"id");out.put(id,new LinkedHashMap<>(Map.of("source_id",id,"label",part.getOrDefault("type",id),"enabled",true,"xyz_m",part.get("xyz_m"),"rpy_rad",part.get("rpy_rad"))));}return out;
     }
     Path saveScene(Map<String,Object> data, boolean validate) throws Exception {
         Path out=models.library.resolve("scenes/setup-"+session.file.getFileName()).toAbsolutePath();Files.createDirectories(out.getParent());out=out.getParent().toRealPath().resolve(out.getFileName());

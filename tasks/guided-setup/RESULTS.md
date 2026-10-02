@@ -1,8 +1,8 @@
 # Guided model and simulation setup — implementation results
 
-Date: 2026-10-01
+Date: 2026-10-01 (updated after desktop walkthrough)
 
-Status: implemented with passing automated and native validation. **Desktop interaction QA is outstanding; retain the PR as a draft until that gate is completed.**
+Status: implemented with passing automated/native validation and substantial desktop interaction evidence. **Motor binding, final migration recheck and explicit OpMode launch remain outstanding after the Mac locked again; retain the PR as a draft until those checks finish.**
 
 ## Delivered
 
@@ -21,9 +21,9 @@ Private CAD, prepared model assets, logs and renderer screenshots remain in igno
 
 | Gate | Result | Local evidence |
 | --- | --- | --- |
-| Full Java suite | 94 tests passed: 5 core SDK, 25 physics, 64 GUI/controller/native tests | `.local/models/guided-tests.log`; module JUnit XML reports |
-| Python suites | 28 tests passed, including explicit fresh-import recovery from damaged saved assets | `.local/models/guided-python-tests.log` |
-| New guided workflow gates | 10 tests passed | `GuidedSetupTest` |
+| Full Java suite | 95 tests passed: 5 core SDK, 25 physics, 65 GUI/controller/native tests | `.local/models/guided-ui-tests.log`; module JUnit XML reports |
+| Python suites | 29 tests passed, including fresh-import recovery and removal-queue correction after retaining settings | `.local/models/guided-python-tests.log` |
+| New guided workflow gates | 11 tests passed, including Swing spinner/editor state restoration | `GuidedSetupTest` |
 | Real reviewed REV DUO + BIOBUZZ scene | Valid placement; **185 native bodies**, no TeamCode started | `.local/models/guided-real-scene.log` |
 | Real powered robot physics | Forward drive, intake contact/containment, reverse release and turn passed | `.local/models/guided-powered-regressions.log` |
 | Real torus retention | Acquisition/carry/turn/stopped retention/reverse release variations and inactive/reverse/coasting/stalled/overload gates passed | `.local/models/guided-powered-regressions.log` |
@@ -43,20 +43,40 @@ The guided tests cover conditional navigation, rejection of misleading completio
 5. Scene bounds previously tested piece centers. They now use complete native bounds, including rotation, with the same 4 mm contact tolerance. A regression case places the center inside the field but part of the shape beyond its boundary above the walls.
 6. An edited calibration value could still display a measured label. Explicit user provenance now takes precedence.
 7. Invalid advanced-editor values could trap the user in that window during close. The draft is retained and returned to the guide for correction even when preparation fails; invalid data still cannot pass review or readiness checks.
+8. On macOS the Swing open chooser hid its filename field. A visible optional absolute-path control now permits selecting files/folders, including hidden library locations. Normal browsing remains available. Import, export and project-folder selection were exercised through the new control.
+9. Busy-state snapshots were captured while recursively disabling controls. `JSpinner.setEnabled(false)` also disabled its editor before that editor's original state was captured, leaving numeric placements disabled afterward. Capture now happens in a separate pass before disabling. A regression test and actual placement editing after a native check verify the fix; originally unavailable buttons remain disabled.
+10. Returning from Advanced settings left the reused instruction component dimmed. The guide now restores its controls before rebuilding the page. The corrected return was visually inspected and exercised.
+11. Completed operation text remained on later pages, and scene readiness/checkmarks remained stale after edits. Navigation now sets current instructions; scene edits immediately update readiness and the sidebar. Actual UI tests verified invalidation, out-of-bounds rejection and recovery.
+12. Long parameter descriptions were clipped in table cells. A wrapped selection detail area shows the full explanation/provenance, and provenance receives more column width. The corrected layout was inspected and selection details exercised.
+13. After manually retaining old part settings, that part remained in the removal-acknowledgment queue. Migration now removes retained parts from that queue and drops empty acknowledgments; the earlier saved revision remains unchanged and the changed model still requires review. A dedicated Python regression passes. Piece-template choices and table rendering now use readable CAD/type names while preserving internal IDs.
 
-## Outstanding desktop QA gate
+## Desktop interaction evidence and remaining gate
 
-The wizard launched without a Java startup error, but the Mac locked before its screens could be exercised with mouse/keyboard. Native-app inventory repeatedly returned: **“The Mac is locked and automatic unlock could not unlock it.”** The user was asked to unlock the desktop while independent validation continued.
+The Mac was unlocked for this follow-up. Plain Java processes appeared in native inventory but could not be selected by the desktop tool. Temporary local `jpackage` app bundles under ignored `.local/desktop-qa/` provided stable app identities. They run the same compiled wizard/model-preview/scene-preview entry points; the bundles are QA artifacts, not a new distribution feature. All mouse/keyboard actions used the Computer tool. Native preview child processes were also opened through the wizard; companion app bundles allowed visual inspection of those same entry points.
 
-The rendered simulator/preview screenshots and automated controller tests do **not** complete this gate. On an unlocked desktop, exercise:
+Actual walkthroughs completed:
 
-1. A new robot import through units/orientation, movement/binding, assumptions, collision preview, explicit review and model-only finish.
-2. A new field import with role/piece selection and both scene modes.
-3. Saved reviewed reuse, changed-CAD migration choices and fresh-default recovery.
-4. Save/close/resume, an invalid edit, Back navigation and advanced-editor return.
-5. Generic/imported scene placement, duplicate/disable/reset, project selection, hardware failures, export and explicit OpMode launch.
+1. New robot ZIP import, metric dimensions, millimeter conversion and restoration, explicit scale confirmation, deferred hardware, save/close/resume to Parts, advanced-editor open/return, invalid fallback mass rejection and correction, collision preview/CAD toggle/zoom, review gate, matching native construction, portable export and **model-only Finish without a project**. The saved session has `finished=true`; its exported bundle contains source/prepared/settings files.
+2. Saved reviewed robot selection satisfied the preparation checks and Next skipped directly to field selection.
+3. Generic field selection, field-only preflight, enabling six game pieces, duplicating a piece with an offset, disabling its source instance, saved game-piece preflight and combined native scene inspection.
+4. After the busy-state fix, editing Robot X after a native check remained possible. X=5 immediately invalidated scene/Finish readiness, native preflight rejected it, and restoring X=-1.2 recovered a valid checked scene.
+5. New field ZIP import, 2 m dimensions, changing the ball role from structure to independent piece using a dropdown, advanced return, readable physics help, fixed-floor/moving-piece native preview, explicit review and save. Both imported-field modes passed preflight after adjusting the robot pose to the smaller field.
+6. Switching from generic to imported field retained the old scene layout and offered a selectable replacement template. Selecting a replacement updated that placement; **Use model piece layout** then loaded the field's own piece layout for successful checking.
+7. Project folder selection, a missing `left_front_drive` error from compatibility checks, and recovery by selecting the valid project.
+8. Changed robot CAD import with a selected prior revision, renewed dimension confirmation, named **Use settings: base** migration and acknowledgment of the old removal queue. The redundant removal entry exposed item 13 above; automated validation of that correction is complete.
 
-Record actual interactions and any fixes here before marking the PR ready or merging it.
+Private evidence: `.local/desktop-qa/models/sessions/3929eec5-b6e4-4694-8499-a9d84de6630f.json` records completed robot preparation; `355ad7a3-140e-415f-8c57-f4df3a2d42f7.json` records simulation/field/migration work. Their native check logs and scene JSON are stored beside them. UI states/screenshots are visible in the testing conversation. Synthetic test CAD/projects and the exported robot bundle remain ignored under `.local/desktop-qa/fixtures/`. Existing real REV DUO/BIOBUZZ regression evidence remains as recorded above.
+
+The Mac locked again immediately before the motor-binding interaction. Native inventory returned **“The Mac is locked and automatic unlock could not unlock it.”** The user was asked to unlock while remaining code fixes and automated checks continued.
+
+Remaining desktop checks before marking ready/merging:
+
+- Reopen the latest build and verify the corrected migration queue no longer calls a retained part removed; verify the readable piece-template choice.
+- Bind the movable robot joint to a selected project motor, prepare/review the changed model, recheck its scene and discover OpModes.
+- Confirm discovery has not initialized the local probe TeamCode, then explicitly **Use and run selected OpMode** and verify the probe's initialization marker.
+- Exercise portable bundle import and explicit fresh-default selection through the UI; their integrity/recovery behavior already passes automated tests. Reset pose behavior is validated by native tests/probes.
+
+Do not count these remaining checks as passed or claim full interactive QA until an unlocked desktop permits completion.
 
 ## Limits
 
