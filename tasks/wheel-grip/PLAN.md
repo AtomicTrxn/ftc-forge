@@ -44,4 +44,4 @@ improvement for importing a different robot.
 - [x] Implement physics/settings/guided controls and migration.
 - [x] Validate behavior, portability and regression gates.
 - [x] Document results.
-- [ ] Ship.
+- [x] Publish tested branch and pull request ([#19](https://github.com/AtomicTrxn/ftc-forge/pull/19)).

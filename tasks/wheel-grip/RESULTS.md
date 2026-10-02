@@ -1,5 +1,7 @@
 # Independent wheel grip — results
 
+Published in [pull request #19](https://github.com/AtomicTrxn/ftc-forge/pull/19).
+
 ## Delivered
 
 - Optional `drive_contacts.wheel_friction` entries select a coefficient (0–2) by
