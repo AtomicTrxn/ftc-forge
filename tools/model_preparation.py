@@ -234,6 +234,16 @@ def validate(p):
         c=p['runtime']['drive_contacts']
         if not isinstance(c.get('enabled'),bool):raise ValueError('drive_contacts.enabled must be true or false')
         finite(c['min_support_normal_y'],.5,1);finite(c['max_contact_gap_m'],0,.02);finite(c['rolling_resistance_coefficient'],0,1)
+        grips=c.get('wheel_friction',[])
+        if not isinstance(grips,list):raise ValueError('wheel_friction must be a list of joint/friction settings')
+        seen=set()
+        for grip in grips:
+            if not isinstance(grip,dict) or not isinstance(grip.get('joint'),str) or not grip['joint'].strip() or isinstance(grip.get('friction'),bool) or not isinstance(grip.get('friction'),(int,float)):raise ValueError('Wheel friction requires a drive joint and numeric coefficient')
+            finite(grip['friction'],0,2)
+            if grip['joint'] in seen:raise ValueError('Duplicate wheel friction setting: '+grip['joint'])
+            seen.add(grip['joint'])
+        joints={e['settings']['joint']['name'] for e in p['entities'].values() if e['settings']['joint']}
+        if not p['migration']['pending'] and seen-joints:raise ValueError('Unknown wheel friction joint; select a current wheel or remove its override: '+', '.join(sorted(seen-joints)))
     if par['length_unit'] not in ['m','mm','in'] or par['up_axis'] not in ['Z','Y']:raise ValueError('Select length units and up axis')
     if par['floor_strategy'] not in ['source','generated']:raise ValueError('Choose source or generated floor')
     finite(par['floor_thickness_m'],.001,.5);finite(par['floor_margin_m'],0,.02);finite(par['floor_top_m'],-100,100);finite(par['contact_stiffness_n_per_m'],.001,1e30);finite(par['contact_damping_ns_per_m'],0,10000);finite(par['collision_margin_m'],0,.02);finite(par['visual_grid_m'],.00001,.001);finite(par['collision_grid_m'],.00001,.01);finite(par['fallback_mass_kg'],.000001,10000);finite(par['minimum_thickness_m'],.000001,.1)
@@ -486,6 +496,16 @@ def remap_entity_provenance(provenance, mapping):
     return result
 
 
+def refresh_wheel_grip_choices(p):
+    targets={e['settings']['joint']['name'] for e in p['entities'].values() if e['settings']['joint'] and e['settings']['joint']['type']=='continuous' and e['settings']['actuators']}
+    grips=p['runtime'].get('drive_contacts',{}).get('wheel_friction',[])
+    for item in p['migration']['pending']:
+        path=item.get('runtime_path',[])
+        if path[:2]==['drive_contacts','wheel_friction']:
+            available=targets-{g['joint'] for i,g in enumerate(grips) if i!=path[2]}
+            item['options']=['Map to: '+n for n in sorted(available)]+['Remove saved wheel grip override']
+
+
 def migrate(old,new):
     if old['model_kind']!=new['model_kind']:raise ValueError('Robot and field settings cannot be interchanged')
     same=old['source']['fingerprint']==new['source']['fingerprint']
@@ -531,7 +551,11 @@ def migrate(old,new):
             for k,v in list(value.items()):
                 if path and path[-1] in ['visual_indices','collision_omissions'] and k in mapping and mapping[k]!=k:value[mapping[k]]=value.pop(k);k=mapping[k]
                 if k in named and isinstance(v,str) and v in mapping:value[k]=mapping[v]
-                elif k in named and isinstance(v,str) and (v in old_names-new_names or v in old_joints-new_joints):pending.append({'new':None,'runtime_path':path+[k],'options':['Map to: '+n for n in sorted(new_names if v in old_names else new_joints)]+['Disable saved model: '+str(path[0])],'reason':'Saved mechanism reference needs a new target: '+v})
+                elif k in named and isinstance(v,str) and (v in old_names-new_names or v in old_joints-new_joints):
+                    wheel_grip=path[:2]==['drive_contacts','wheel_friction']
+                    targets={e['settings']['joint']['name'] for e in new['entities'].values() if e['settings']['joint'] and e['settings']['joint']['type']=='continuous' and e['settings']['actuators']} if wheel_grip else (new_names if v in old_names else new_joints)
+                    if wheel_grip:targets-={g['joint'] for i,g in enumerate(new['runtime']['drive_contacts']['wheel_friction']) if i!=path[2]}
+                    pending.append({'new':None,'runtime_path':path+[k],'options':['Map to: '+n for n in sorted(targets)]+(['Remove saved wheel grip override'] if wheel_grip else ['Disable saved model: '+str(path[0])]),'reason':'Saved wheel grip needs a current drive joint: '+v if wheel_grip else 'Saved mechanism reference needs a new target: '+v})
                 else:references(v,path+[k])
         elif isinstance(value,list):
             for i,v in enumerate(value):
@@ -544,6 +568,7 @@ def migrate(old,new):
     if old['adapter']=='biobuzz' and not same:pending.append({'new':None,'options':['Regenerate general field preparation'],'reason':'Authored BIOBUZZ assembly corrections cannot be safely migrated automatically. Assign roles and review all field bodies in the editor.'})
     if removed:pending.append({'new':None,'options':['Acknowledge removed parts'],'removed':removed,'reason':'Old settings must not disappear silently'})
     new['migration']={'pending':pending,'decisions':decisions,'from_revision':old['revision_id'],'old_entities':copy.deepcopy(old['entities']) if pending else {},'old_provenance':copy.deepcopy(old['provenance']) if pending else {},'old_source_joints':{n:l['joint'] for n,l in old['source']['links'].items()} if pending else {}}
+    refresh_wheel_grip_choices(new)
     if same:
         new['entities']=copy.deepcopy(old['entities']);new['migration']=copy.deepcopy(old['migration']);new['review']=copy.deepcopy(old['review'])
     else:new['review']={'state':'draft'}
@@ -613,6 +638,22 @@ def capture(source,library,kind):
 def resolve_migration(path,index,choice):
     p=read(path);item=p['migration']['pending'][index]
     if choice not in item['options']:raise ValueError('Select one of the proposed resolutions')
+    if choice=='Remove saved wheel grip override':
+        entry_index=item['runtime_path'][2]
+        p['runtime']['drive_contacts']['wheel_friction'].pop(entry_index)
+        # Removing a list entry shifts later saved references and their provenance.
+        for other in p['migration']['pending']:
+            route=other.get('runtime_path',[])
+            if other is not item and route[:2]==['drive_contacts','wheel_friction'] and route[2]>entry_index:route[2]-=1
+        base='runtime/drive_contacts/wheel_friction/'
+        provenance={}
+        for route,value in p['provenance'].items():
+            if route.startswith(base):
+                parts=route[len(base):].split('/',1);i=int(parts[0])
+                if i==entry_index:continue
+                route=base+str(i-(i>entry_index))+('/'+parts[1] if len(parts)>1 else '')
+            provenance[route]=value
+        p['provenance']=provenance
     if choice.startswith('Disable saved model: '):
         key=choice[21:];p['runtime'].pop(key,None)
         for dependent in {'drive':['tires'],'intake':['flexible_intake','torus_retention'],'flexible_intake':['torus_retention']}.get(key,[]):p['runtime'].pop(dependent,None)
@@ -647,7 +688,7 @@ def resolve_migration(path,index,choice):
             if 'removed' in pending:pending['removed']=[n for n in pending['removed'] if n!=old]
     p['migration']['decisions'].append({**item,'selected':choice});p['migration']['pending'].pop(index)
     p['migration']['pending']=[q for q in p['migration']['pending'] if 'removed' not in q or q['removed']]
-    p['review']={'state':'draft'};atomic_json(path,p);compile_profile(path)
+    p['review']={'state':'draft'};refresh_wheel_grip_choices(p);validate(p);atomic_json(path,p);compile_profile(path)
 
 
 def save_revision(path,library,reviewed=False):

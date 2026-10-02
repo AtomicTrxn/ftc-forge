@@ -20,6 +20,8 @@ final class CollisionAudit {
         scene.groupParts();
         List<Link> links=new ArrayList<>();List<Body> bodies=new ArrayList<>();List<String> errors=new ArrayList<>();
         Set<String> owners=new TreeSet<>(scene.owners.values());
+        if(scene.driveContacts!=null)for(String joint:scene.driveContacts.wheelFriction().keySet())
+            if(!scene.wheelJoints.containsValue(joint))errors.add("Wheel friction target is not a configured drive wheel: "+joint+". Choose a current wheel or remove its saved override.");
         if(scene.wheelContactsEnabled())for(String joint:new TreeSet<>(scene.wheelJoints.values())) {
             var members=scene.wheelJoints.entrySet().stream().filter(e->e.getValue().equals(joint)).map(Map.Entry::getKey).toList();
             if(members.stream().anyMatch(n->!scene.owners.get(n).equals(scene.urdf.rootLink)))errors.add("Drive wheel '"+joint+"' must belong to the welded chassis for native support. Review its parent joints.");

@@ -56,6 +56,7 @@ final class GuidedParameterPanel extends JPanel {
     }
     private static String base(String path){String[] bits=path.split("/");int i=bits.length-1;if(bits[i].matches("[0-9]+"))i--;return bits[i];}
     static String label(String path){
+        if(path.contains("/drive_contacts/wheel_friction/"))return base(path).equals("joint")?"Drive wheel joint":"Wheel friction coefficient (dimensionless)";
         String key=base(path);String text=switch(key){
             case "box_size_m"->"Box dimensions (m)";case "collision_xyz_m"->"Collision position (m)";case "collision_rpy_rad"->"Collision rotation (rad)";
             case "mass_kg"->"Mass (kg)";case "fallback_mass_kg"->"Missing-mass default (kg)";case "mass_mode"->"Mass source";case "inertia_mode"->"Inertia source";
@@ -73,11 +74,11 @@ final class GuidedParameterPanel extends JPanel {
         };
         String tail=path.substring(path.lastIndexOf('/')+1);if(tail.matches("[0-9]+")){int i=Integer.parseInt(tail);String[] axes=key.contains("rpy")?new String[]{"roll","pitch","yaw"}:new String[]{"X","Y","Z"};text+=" · "+(i<3?axes[i]:"component "+(i+1));}return text;
     }
-    static String help(String path){String key=base(path);return switch(key){
+    static String help(String path){String key=base(path);if(key.equals("joint")&&path.contains("/drive_contacts/wheel_friction/"))return "Configured drive joint for this wheel branch and fixed tread children. Choose a bound continuous wheel; use Wheel grip to restore inheritance. Changed CAD requires review.";return switch(key){
         case "collision_strategy"->"Source keeps CAD collisions; mesh preserves more detail; boxes may block openings.";
         case "mass_mode"->"Use CAD mass, your override, or the saved missing-mass default.";
         case "inertia_mode"->"Rotational resistance: preserve CAD, derive from a box, or supply a tensor.";
-        case "friction"->"Higher values resist sliding. CAD normally does not measure this.";
+        case "friction"->path.contains("/drive_contacts/wheel_friction/")?"Wheel-only sliding coefficient (0–2), multiplied by surface friction. Belly material is independent. Use Wheel grip to select joints or restore inheritance. Tire mode also limits force by its slip coefficients. Measure the tread/field pair; CAD and demo travel do not establish accuracy.":"Higher values resist sliding. CAD normally does not measure this.";
         case "enabled"->path.contains("/drive_contacts/")?"Wheel collision shapes support the robot. The drive solver owns wheel/floor tangential response; chassis scrapes and wall friction remain native. Disabling restores legacy wheel ballast/proxy drive and requires collision review.":"Saved with this model.";
         case "min_support_normal_y"->"Only upward-facing static contacts supply traction. Allowed cutoff: 0.5–1; 1 accepts horizontal support. 0.7 is provisional. Walls and moving supports do not supply drive traction.";
         case "max_contact_gap_m"->"Accept persistent wheel contacts only within this separation. Review actual wheel geometry and belly clearance before increasing it; it does not create missing contacts.";
@@ -102,6 +103,7 @@ final class GuidedParameterPanel extends JPanel {
         case "mass_mode"->new String[]{"source","override","fallback"};case "inertia_mode"->new String[]{"source","box","override"};case "up_axis"->new String[]{"Z","Y"};
         case "floor_strategy"->new String[]{"source","generated"};case "type"->row.path.contains("/joint/")?new String[]{"fixed","continuous","revolute","prismatic"}:null;
         case "parent"->FieldPackage.map(profile.get("entities")).keySet().toArray(String[]::new);
+        case "joint"->{try{yield row.path.contains("/drive_contacts/wheel_friction/")?controller.wheelGripChoices().keySet().toArray(String[]::new):null;}catch(Exception e){yield null;}}
         case "name"->{try{var names=controller.hardware(null);yield names.isEmpty()?null:names.toArray(String[]::new);}catch(Exception e){yield null;}}
         default->null;
     };}

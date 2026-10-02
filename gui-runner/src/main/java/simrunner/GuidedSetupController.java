@@ -57,6 +57,53 @@ final class GuidedSetupController {
         FieldPackage.map(profile.get("provenance")).put("runtime/drive_contacts/enabled","user supplied: wheel support mode");
         update("robot",profile);compile("robot");
     }
+    Map<String,String> wheelGripChoices() throws Exception {
+        var profile=session.profile("robot");var runtime=FieldPackage.map(profile.get("runtime"));
+        var names=runtime.containsKey("drive")?DifferentialDriveConfig.parse(FieldPackage.map(runtime.get("drive"))).motorNames():DriveGeometry.MOTORS;
+        var choices=new TreeMap<String,String>();
+        for(var entry:FieldPackage.map(profile.get("entities")).entrySet()) {
+            var settings=FieldPackage.map(FieldPackage.map(entry.getValue()).get("settings"));if(settings.get("joint")==null)continue;var joint=FieldPackage.map(settings.get("joint"));
+            var actuators=FieldPackage.maps(settings.get("actuators")).stream().map(a->a.get("name").toString()).filter(names::contains).toList();
+            if("continuous".equals(joint.get("type"))&&!actuators.isEmpty())choices.put(joint.get("name").toString(),entry.getKey()+" · "+String.join(", ",actuators));
+        }
+        return choices;
+    }
+    void wheelGrip(String joint,Double coefficient) throws Exception {
+        if(!wheelGripChoices().containsKey(joint))throw new IllegalArgumentException("Choose a configured drive wheel. Verify continuous joints and motor bindings in Parts and movement.");
+        var profile=session.profile("robot");var contacts=FieldPackage.map(profile.get("runtime")).get("drive_contacts");
+        if(contacts==null)throw new IllegalArgumentException("Choose native contacts in Wheel support model before tuning wheel grip.");
+        var cfg=FieldPackage.map(contacts);
+        var current=DriveContactConfig.parse(cfg);
+        if(!current.enabled())throw new IllegalArgumentException("Choose native contacts in Wheel support model before tuning wheel grip.");
+        if(Objects.equals(current.wheelFriction().get(joint),coefficient))return;
+        var grips=new ArrayList<Object>(FieldPackage.maps(cfg.getOrDefault("wheel_friction",List.of())));
+        int oldIndex=-1;for(int i=0;i<grips.size();i++)if(joint.equals(FieldPackage.map(grips.get(i)).get("joint"))){oldIndex=i;break;}
+        if(coefficient==null) {if(oldIndex<0)return;grips.remove(oldIndex);}
+        else {
+            var grip=Map.of("joint",joint,"friction",coefficient);
+            if(oldIndex<0)grips.add(grip);else grips.set(oldIndex,grip);
+        }
+        cfg.put("wheel_friction",grips);DriveContactConfig.parse(cfg);
+        // Keep other wheels' measurement labels attached to their entries after a removal.
+        var provenance=FieldPackage.map(profile.get("provenance"));String base="runtime/drive_contacts/wheel_friction";
+        var labels=new LinkedHashMap<String,Object>();
+        for(var entry:provenance.entrySet()) {
+            String path=entry.getKey();
+            if(path.startsWith(base+"/")&&oldIndex>=0) {
+                String[] tail=path.substring(base.length()+1).split("/",2);int i=Integer.parseInt(tail[0]);
+                if(i==oldIndex)continue;
+                if(coefficient==null&&i>oldIndex)path=base+"/"+(i-1)+(tail.length>1?"/"+tail[1]:"");
+            }
+            labels.put(path,entry.getValue());
+        }
+        if(coefficient!=null) {
+            String entry=base+"/"+(oldIndex<0?grips.size()-1:oldIndex);
+            labels.put(entry+"/joint","user supplied: configured drive wheel selection");
+            labels.put(entry+"/friction","user supplied: wheel grip assumption (measurement required)");
+        }
+        profile.put("provenance",labels);
+        update("robot",profile);compile("robot");
+    }
     void measurements(RobotMeasurements.Entry entry) throws Exception {
         if(entry.empty())return;
         var measured=RobotMeasurements.apply(session.profile("robot"),entry);

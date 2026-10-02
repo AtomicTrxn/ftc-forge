@@ -78,19 +78,22 @@ class DriveContactsTest {
         }
         assertTrue(speeds[0]>.99);assertTrue(speeds[1]>0&&speeds[1]<speeds[0]-.2,Arrays.toString(speeds));
     }
-    @Test void nativeTiresRespectFloorGripAndKeepEqualShaftReaction()throws Exception {
+    @ParameterizedTest @ValueSource(booleans={false,true})
+    void nativeTiresRespectFloorGripAndKeepEqualShaftReaction(boolean wheelOverride)throws Exception {
         var c=model();var p=c.session.profile("robot");var spec=Map.of("static_mu",.9,"sliding_mu",.8,"lateral_scale",1.,"stiffness_n_per_mps",100.,"transition_mps",.15);
         FieldPackage.map(p.get("runtime")).put("tires",Map.of("traction",spec,"omni",spec,"omni_joints",List.of(),"reflected_motor_inertia_kg_m2",.0015,"contact_tolerance_m",.004));c.update("robot",p);c.compile("robot");
         double[] travel=new double[2],shaftSpeed=new double[2];
-        for(int i=0;i<2;i++)try(var demo=new RobotMotionDemo(c.motionSetup(),new DesktopAssetManager(true),"drive/forward")) {
-            floor(demo).setFriction(i==0?.6f:0);
+        for(int i=0;i<2;i++) {
+            if(wheelOverride){c.wheelGrip("wheel_joint0",i==0?.6:0.);c.wheelGrip("wheel_joint1",i==0?.6:0.);}
+            try(var demo=new RobotMotionDemo(c.motionSetup(),new DesktopAssetManager(true),"drive/forward")) {
+            floor(demo).setFriction(wheelOverride?.6f:i==0?.6f:0);
             while(!demo.finished()) {demo.tick();shaftSpeed[i]=Math.max(shaftSpeed[i],demo.world.tireDrive().states().stream().mapToDouble(w->Math.abs(w.surfaceMps())).max().orElse(0));}
             assertEquals("",demo.failure);var r=demo.observations.get(0);travel[i]=FieldPackage.num(r,"forward_m");
             assertTrue(demo.world.tireDrive().states().stream().allMatch(TireDrive.State::supported));
             assertEquals(.6,demo.world.chassisBody().getFriction(),.0001);
             if(i==1)assertTrue(demo.world.tireDrive().states().stream().allMatch(w->w.forceN()==0));
-        }
-        System.out.println("[NATIVE TIRES] grip/zero-grip travel="+Arrays.toString(travel)+" peak shaft speed="+Arrays.toString(shaftSpeed));
+        }}
+        System.out.println("[NATIVE TIRES] wheel override="+wheelOverride+" grip/zero-grip travel="+Arrays.toString(travel)+" peak shaft speed="+Arrays.toString(shaftSpeed));
         assertTrue(travel[0]>.005&&travel[0]>travel[1]*10,Arrays.toString(travel));assertEquals(0,travel[1],.001);assertTrue(shaftSpeed[1]>shaftSpeed[0],Arrays.toString(shaftSpeed));
     }
     @Test void decomposedMeshWheelsRetainContactIdentityUnderBodyRotation()throws Exception {
