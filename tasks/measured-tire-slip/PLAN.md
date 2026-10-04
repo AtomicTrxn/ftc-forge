@@ -44,4 +44,4 @@ continuous steady curve. Changed CAD/settings still need collision and motion re
 - [x] Implement fitting and evidence validation.
 - [x] Implement guided application and portability.
 - [x] Test and inspect available desktop flow; final UI actions await Mac unlock.
-- [ ] Document and ship.
+- [x] Document and publish [PR #21](https://github.com/AtomicTrxn/ftc-forge/pull/21).

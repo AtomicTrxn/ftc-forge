@@ -1,5 +1,7 @@
 # Measured longitudinal tire slip — results
 
+Published in [pull request #21](https://github.com/AtomicTrxn/ftc-forge/pull/21).
+
 ## Delivered
 
 - Shared steady longitudinal envelope with the native tire law. The runtime integration
