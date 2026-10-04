@@ -320,7 +320,7 @@ final class ArticulatedRobot implements PhysicsTickListener {
                 hinge.getRotationMotor(0).setMotorEnabled(true);
                 hinge.set(MotorParam.TargetVelocity, 3, (float)((velocity+effort*dt*inverseEffective)*motorAngleSign));
                 hinge.set(MotorParam.MaxMotorForce, 3, (float)Math.abs(effort));
-                lastEffort=effort;
+                lastEffort=(float)Math.abs(effort);
                 effortIsLimit=true;
                 return;
             }

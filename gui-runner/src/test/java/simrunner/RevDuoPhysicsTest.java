@@ -104,7 +104,10 @@ class RevDuoPhysicsTest {
             robot.setShaftLoad("intake",.3);elasticTicks(space,intake,4);
             double loaded=intake.getOmegaRadS(),loadedCurrent=intake.getCurrent(org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit.AMPS);
             assertEquals(15,free,1);assertTrue(loaded<free-3);assertTrue(loadedCurrent>freeCurrent+.5);
-            robot.setShaftLoad("intake",0);intake.setPower(-.5);elasticTicks(space,intake,4);
+            robot.setShaftLoad("intake",0);intake.setPower(-.5);elasticTicks(space,intake,1./480);
+            var diagnostic=robot.diagnosticJoints().stream().filter(j->j.name().equals("upperJoint")).findFirst().orElseThrow();
+            assertTrue(diagnostic.effortIsLimit());assertTrue(diagnostic.effort()>0,"Native motor effort limit is a nonnegative magnitude, including during reverse drive");
+            elasticTicks(space,intake,4);
             assertTrue(intake.getOmegaRadS()<-10);assertEquals(robot.jointPosition("upperJoint"),robot.jointPosition("lowerJoint"),.001);
             intake.setPower(0);intake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
             double spinning=intake.getOmegaRadS();elasticTicks(space,intake,1);

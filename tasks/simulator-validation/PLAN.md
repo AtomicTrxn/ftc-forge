@@ -134,6 +134,9 @@ Implementation and verification complete; shipment pending.
   their native values. No motion equations were changed. Joint telemetry is cached in the
   production tick, without renderer angle unwrapping; native motor effort limits are labeled
   as limits rather than actual solved constraint forces.
+- Final review corrected effort-limit telemetry to match the nonnegative native limit,
+  including reversed elastic motors. Added an assertion in the existing native elastic
+  drivetrain regression; diagnostics and REV physics tests pass after that telemetry-only fix.
 - Diagnostics run at most 10 Hz, poll nothing while hidden, cap sampled contacts/devices,
   reuse arrows and clean up on replay/close. P creates a separate JSON file; prepared model,
   collision review and calibration are unchanged. See `gui-runner/PHYSICS_DIAGNOSTICS.md`.
