@@ -8,6 +8,10 @@ isolated settings are retained for each run. See [simulator validation](gui-runn
 Add `--args='--matrix'` to check documented mass, wheel dimensions, grip, gearing and timestep
 ranges with native force, drift, stability and convergence bounds.
 
+Both 3D windows offer [live physics diagnostics](gui-runner/PHYSICS_DIAGNOSTICS.md): **D**
+toggles native contact/load and drive-force vectors, wheel grip/slip, motor effort/current,
+and mechanism travel/limits; **P** saves a read-only snapshot. **C** still shows collision shapes.
+
 ## Requirements
 
 - JDK 17 with the `jdk.compiler` module (a full JDK, not a JRE)

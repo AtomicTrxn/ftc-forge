@@ -44,6 +44,16 @@ final class ArticulatedRobot implements PhysicsTickListener {
         addAttachedInertia(axis.child.part().name(),moment);
     }
     private final List<Axis> axes = new ArrayList<>();
+    record DiagnosticJoint(String name,String body,String type,double position,double velocity,double effort,boolean effortIsLimit,Double lower,Double upper,Vector3f pivot,Vector3f axis) { }
+    Map<Long,String> diagnosticBodies() {
+        var names=new LinkedHashMap<Long,String>();bodies.forEach((name,body)->names.put(body.control().nativeId(),name));return Map.copyOf(names);
+    }
+    List<DiagnosticJoint> diagnosticJoints() {
+        // Read cached last-tick values. Do not sample/unroll joint position from a renderer.
+        return axes.stream().limit(32).map(a->new DiagnosticJoint(a.joint.name(),a.child.part().name(),a.joint.type(),a.position,a.lastVelocity,a.lastEffort,a.effortIsLimit,a.joint.lower(),a.joint.upper(),
+            a.parent.control().getPhysicsLocation().add(a.parent.control().getPhysicsRotation().mult(a.pivotParent)),a.parent.control().getPhysicsRotation().mult(a.axisParent))).toList();
+    }
+    int diagnosticJointCount(){return axes.size();}
     final Node chassisNode;
 
     ArticulatedRobot(ImportedRobotScene scene, PhysicsWorld world, Node field, Vector3f start) throws Exception {
@@ -180,6 +190,8 @@ final class ArticulatedRobot implements PhysicsTickListener {
         final Quaternion initialRelative;
         final List<RobotUrdf.Actuator> actuators = new ArrayList<>();
         double position, previousWrapped;
+        double lastVelocity,lastEffort;
+        boolean effortIsLimit;
         New6Dof hinge;
         float motorAngleSign=1;
 
@@ -263,6 +275,7 @@ final class ArticulatedRobot implements PhysicsTickListener {
             double q = samplePosition();
             Vector3f worldAxis = parent.control().getPhysicsRotation().mult(axisParent);
             double velocity = rate(worldAxis);
+            lastVelocity=velocity;
             var passive=scene.passiveJoints.containsKey(joint.name())?FieldPackage.map(scene.passiveJoints.get(joint.name())):null;
             boolean linear=joint.type().equals("prismatic");
             double effort = passive==null?0:-FieldPackage.num(passive,linear?"joint_spring_n_per_m":"joint_spring_nm_per_rad")*(q-FieldPackage.num(passive,linear?"joint_rest_m":"joint_rest_rad"))-FieldPackage.num(passive,linear?"joint_damping_ns_per_m":"joint_damping_nm_s")*velocity;
@@ -307,10 +320,14 @@ final class ArticulatedRobot implements PhysicsTickListener {
                 hinge.getRotationMotor(0).setMotorEnabled(true);
                 hinge.set(MotorParam.TargetVelocity, 3, (float)((velocity+effort*dt*inverseEffective)*motorAngleSign));
                 hinge.set(MotorParam.MaxMotorForce, 3, (float)Math.abs(effort));
+                lastEffort=(float)Math.abs(effort);
+                effortIsLimit=true;
                 return;
             }
             double cap = (joint.type().equals("prismatic") ? 50 : 100) / inverseEffective;
             effort = Math.max(-cap, Math.min(cap, effort));
+            lastEffort=effort;
+            effortIsLimit=false;
             Vector3f impulse = worldAxis.mult((float) (effort * dt));
             if (joint.type().equals("prismatic")) {
                 child.control().applyImpulse(impulse, child.control().getPhysicsRotation().mult(pivotChild));
