@@ -31,6 +31,8 @@ Fresh robot imports use [native wheel support and contact settings](gui-runner/D
 
 **Wheel grip…** in Physics assumptions adds independent, portable friction settings for configured drive wheels. Belly friction stays separate; changed CAD remaps compatible joints or offers replacement/removal choices. Motion results show simulated effective grip. Measure the actual tread/field pair before treating these assumptions as calibrated.
 
+**Measure wheel grip…** provides a [guided force/load calibration](gui-runner/MEASURED_GRIP.md) with units, CSV exchange, independent validation trials and saved quality criteria. Passing measurements and their surface context travel with exported profiles and compatible CAD migration; applying them requires renewed collision and motion review.
+
 Imported robot collision coverage is checked per rigid body before physics starts. The selector's **Review collisions** action shows actual native shapes for the selected robot and field; C toggles collision shapes and V toggles CAD visibility. Save a coverage report with `./gradlew :gui-runner:auditCollisions --args='/absolute/robotProject /absolute/report.json'`. See [collision review](gui-runner/COLLISION_REVIEW.md).
 
 To use your own robot, replace `gui-runner/sample-teamcode` in the commands with an absolute path or a path relative to the repository root. The second argument is the annotated OpMode's class name or display name. The headless runner accepts an optional third argument for watchdog timeout in milliseconds.

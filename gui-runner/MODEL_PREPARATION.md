@@ -84,6 +84,12 @@ Saved revisions are immutable. Editing copies a revision into a draft; atomic sa
 
 **Export profile…** creates a portable ZIP containing settings, source CAD copies, prepared assets and calibration. Those CAD copies are included in the export: treat the bundle as sharing the model itself. **Import profile bundle** restores it without old Downloads/worktree paths. Model bundles have bounded extraction and reject traversal, symlinks and unsupported versions. Public repository commits do not include private CAD/library assets.
 
+[Measured wheel grip](MEASURED_GRIP.md) retains force/load readings, independent trial
+assignments, surface context and quality criteria inside robot settings. Export/import
+preserves the evidence; compatible CAD migration remaps wheel targets and keeps the
+original measurement identity. Changed CAD requires renewed review. Manual changes can
+discard only the affected wheel's evidence; stale evidence otherwise fails native loading.
+
 Scene JSON stores model/revision references, robot pose, field-only/game-pieces mode and piece poses. Select source piece instances, duplicate or disable rows, and change starting positions/rotations. R restores those saved poses. Model physical properties stay in the model revision. Scene references use paths relative to the scene file; moving a library and its scenes together retains those references. For a separately relocated model, reopen the scene and select the replacement revision. Missing piece IDs receive selectable placement mappings or source-layout choices.
 
 Robot model settings can conflict with older project physics entries. Choose saved model or project values explicitly; the choice is saved as `model_settings`. Decomposition changes require review in the model editor. Hardware names continue to be checked against the selected project's FTC configuration; the editor offers available hardware names for rebinding. Changing geometry or bindings creates another reviewed revision.

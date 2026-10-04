@@ -17,6 +17,10 @@ record DriveContactConfig(boolean enabled,double minSupportNormalY,double maxCon
         return new java.util.LinkedHashMap<>(Map.of("enabled",enabled,"min_support_normal_y",.7,"max_contact_gap_m",.003,"rolling_resistance_coefficient",.005));
     }
     static DriveContactConfig parse(Map<String,Object> values) {
+        return parse(values,true);
+    }
+    /** Manual correction can discard stale measurement evidence; physics always validates it. */
+    static DriveContactConfig parse(Map<String,Object> values,boolean checkMeasurements) {
         if(!(values.get("enabled") instanceof Boolean enabled))throw new IllegalArgumentException("drive_contacts.enabled must be true or false");
         var grip=new LinkedHashMap<String,Double>();
         if(values.containsKey("wheel_friction")) {
@@ -25,6 +29,7 @@ record DriveContactConfig(boolean enabled,double minSupportNormalY,double maxCon
                 var setting=FieldPackage.map(entry);
                 if(!(setting.get("joint") instanceof String joint)||!(setting.get("friction") instanceof Number mu))throw new IllegalArgumentException("Wheel friction requires a drive joint and numeric coefficient.");
                 if(grip.putIfAbsent(joint,mu.doubleValue())!=null)throw new IllegalArgumentException("Duplicate wheel friction setting: "+joint);
+                if(checkMeasurements&&setting.containsKey("measurement"))try{WheelGripMeasurement.check(FieldPackage.map(setting.get("measurement")),mu.doubleValue());}catch(Exception e){throw new IllegalArgumentException("Wheel "+joint+": "+e.getMessage(),e);}
             }
         }
         return new DriveContactConfig(enabled,FieldPackage.num(values,"min_support_normal_y"),FieldPackage.num(values,"max_contact_gap_m"),FieldPackage.num(values,"rolling_resistance_coefficient"),grip);

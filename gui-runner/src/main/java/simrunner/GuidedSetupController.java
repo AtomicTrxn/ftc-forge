@@ -69,21 +69,35 @@ final class GuidedSetupController {
         return choices;
     }
     void wheelGrip(String joint,Double coefficient) throws Exception {
+        setWheelGrip(joint,coefficient,null,false);
+    }
+    void wheelGrip(String joint,Double coefficient,boolean discardMeasurements) throws Exception {
+        setWheelGrip(joint,coefficient,null,discardMeasurements);
+    }
+    void measuredWheelGrip(String joint,Map<String,Object> evidence,boolean physicalReadingsConfirmed)throws Exception {
+        if(!physicalReadingsConfirmed)throw new IllegalArgumentException("Confirm that the readings come from physical tread/surface trials before applying measured settings.");
+        if(!joint.equals(evidence.get("recorded_joint")))throw new IllegalArgumentException("Measurement preview belongs to another wheel. Select the recorded joint and fit again.");
+        double coefficient=FieldPackage.num(FieldPackage.map(evidence.get("result")),"wheel_coefficient");WheelGripMeasurement.check(evidence,coefficient);
+        setWheelGrip(joint,coefficient,evidence,true);
+    }
+    private void setWheelGrip(String joint,Double coefficient,Map<String,Object> evidence,boolean discardMeasurements) throws Exception {
         if(!wheelGripChoices().containsKey(joint))throw new IllegalArgumentException("Choose a configured drive wheel. Verify continuous joints and motor bindings in Parts and movement.");
         var profile=session.profile("robot");var contacts=FieldPackage.map(profile.get("runtime")).get("drive_contacts");
         if(contacts==null)throw new IllegalArgumentException("Choose native contacts in Wheel support model before tuning wheel grip.");
         var cfg=FieldPackage.map(contacts);
-        var current=DriveContactConfig.parse(cfg);
+        var current=DriveContactConfig.parse(cfg,false);
         if(!current.enabled())throw new IllegalArgumentException("Choose native contacts in Wheel support model before tuning wheel grip.");
-        if(Objects.equals(current.wheelFriction().get(joint),coefficient))return;
+        if(!discardMeasurements&&Objects.equals(current.wheelFriction().get(joint),coefficient))return;
         var grips=new ArrayList<Object>(FieldPackage.maps(cfg.getOrDefault("wheel_friction",List.of())));
         int oldIndex=-1;for(int i=0;i<grips.size();i++)if(joint.equals(FieldPackage.map(grips.get(i)).get("joint"))){oldIndex=i;break;}
         if(coefficient==null) {if(oldIndex<0)return;grips.remove(oldIndex);}
         else {
-            var grip=Map.of("joint",joint,"friction",coefficient);
+            var grip=new LinkedHashMap<String,Object>();grip.put("joint",joint);grip.put("friction",coefficient);if(evidence!=null)grip.put("measurement",evidence);
             if(oldIndex<0)grips.add(grip);else grips.set(oldIndex,grip);
         }
-        cfg.put("wheel_friction",grips);DriveContactConfig.parse(cfg);
+        // Save each correction even if a different wheel still has stale evidence.
+        // Compilation below continues to reject any remaining invalid measurements.
+        cfg.put("wheel_friction",grips);DriveContactConfig.parse(cfg,false);
         // Keep other wheels' measurement labels attached to their entries after a removal.
         var provenance=FieldPackage.map(profile.get("provenance"));String base="runtime/drive_contacts/wheel_friction";
         var labels=new LinkedHashMap<String,Object>();
@@ -99,7 +113,8 @@ final class GuidedSetupController {
         if(coefficient!=null) {
             String entry=base+"/"+(oldIndex<0?grips.size()-1:oldIndex);
             labels.put(entry+"/joint","user supplied: configured drive wheel selection");
-            labels.put(entry+"/friction","user supplied: wheel grip assumption (measurement required)");
+            labels.put(entry+"/friction",evidence==null?"user supplied: wheel grip assumption (measurement required)":"measured from supplied sliding-onset trials; independent validation passed for the saved reference surface");
+            if(evidence!=null)labels.put(entry+"/measurement","user supplied physical readings; fit and validation evidence");
         }
         profile.put("provenance",labels);
         update("robot",profile);compile("robot");

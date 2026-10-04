@@ -6,6 +6,11 @@ Start with the [robot measurement guide](ROBOT_MEASUREMENTS.md): weigh the opera
 
 ## Record telemetry
 
+For material grip, use [Measure wheel grip…](MEASURED_GRIP.md) in guided Physics
+assumptions. It fits restrained-wheel sliding-onset force/load trials with independent
+validation and portable evidence. Motor and free-drive telemetry fitting below covers
+different response parameters; it does not identify tread/field friction.
+
 Copy [`CalibrationRecorder.java`](sample-teamcode/TeamCode/src/main/java/org/firstinspires/ftc/teamcode/CalibrationRecorder.java) into your Android TeamCode source tree. It uses FTC SDK `DcMotorEx`, `HardwareMap`, and `CurrentUnit`. Create it once in an OpMode and close it when recording ends:
 
 ```java

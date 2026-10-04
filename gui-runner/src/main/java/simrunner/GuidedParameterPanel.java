@@ -45,6 +45,7 @@ final class GuidedParameterPanel extends JPanel {
         else if(o instanceof List<?> list)for(int i=0;i<list.size();i++)flatten(list.get(i),path+"/"+i,page,list,i);
     }
     private void flatten(Object value,String path,String page,Object parent,Object key){
+        if(path.contains("/drive_contacts/wheel_friction/")&&path.endsWith("/measurement"))return;
         if(value instanceof Map||value instanceof List){flatten(value,path,page);return;}
         if(value==null||!include(path,page))return;rows.add(new Row(parent,key,value,path,label(path),help(path)));
     }
