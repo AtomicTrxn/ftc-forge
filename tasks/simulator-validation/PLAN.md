@@ -57,7 +57,7 @@ reports both individual bounds and cross-timestep comparisons. Failures identify
 - [x] Test live snapshots and overlay behavior with synthetic native scenes, including
   unsupported, slippery and blocked cases; verify diagnostics do not change physics.
 - [x] Document controls and evidence and run regression checks.
-- [ ] Ship item 3 in its own merged PR.
+- [x] Ship item 3 in its own merged PR.
 
 Acceptance: a user can see what contacts support the robot and inspect drive/mechanism effort
 while it moves; toggling diagnostics has no effect on the physics result.
@@ -110,7 +110,8 @@ Shipped: [PR #23](https://github.com/AtomicTrxn/ftc-forge/pull/23), merge `ef5b9
 
 ### Item 3
 
-Implementation and verification complete; shipment pending.
+Shipped: [PR #24](https://github.com/AtomicTrxn/ftc-forge/pull/24), merge `655fb0a`.
+All three requested items are implemented, verified and shipped separately.
 
 - `./gradlew test :gui-runner:validateSimulator --args='--matrix'`: **174/174 native
   scenarios and all 190 Java cases pass** (GUI 142, physics 41, SDK 7; no skips/errors/failures).
