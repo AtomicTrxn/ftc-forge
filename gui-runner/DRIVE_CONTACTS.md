@@ -40,6 +40,11 @@ Defaults are provisional assumptions. Measure dimensions, mass, rolling resistan
 
 ## Measuring and retaining grip
 
+**Measure wheel grip…** supplies [guided readings, CSV exchange, fit preview and saved
+independent validation](MEASURED_GRIP.md). Applying a passing result saves normalized
+readings and surface context with the selected wheel. Native loading rechecks that
+evidence; manual changes can explicitly discard it. Reopen the guide to refit.
+
 Use the actual tread and field material. Measure normal load and horizontal force at sliding onset: effective grip is force / normal load (both in newtons). The saved wheel coefficient is effective grip / saved surface coefficient, which must be nonzero. For example, 9 N sliding force under 20 N normal load gives effective grip 0.45; with surface friction 0.6, enter wheel friction 0.75. This measurement identifies the pair, not two independent material properties. Keep the surface setting consistent when reusing this tuning.
 
 In optional tire mode, the static/sliding tire curve is a second limit. Review both limits under **Runtime / calibrated settings**. Native normal load varies per wheel and timestep; a motion demo's grip value reports the simulated contact budget, not a physical measurement. Aggregate driving still shares grip across supported wheels and does not predict detailed asymmetric tire steering.

@@ -1,5 +1,8 @@
 # Independent wheel grip — results
 
+Changelog: the [measured-grip follow-up](../measured-grip/RESULTS.md) now supplies
+guided scalar sliding-onset fitting and independent validation; dynamic slip fitting remains open.
+
 Published in [pull request #19](https://github.com/AtomicTrxn/ftc-forge/pull/19).
 
 ## Delivered
@@ -96,5 +99,7 @@ rolling/spinning coefficients remain shared by the welded body.
 
 Wheels remain welded collision proxies on a level chassis. Detailed rotating wheels,
 rollers/treads, suspension, slope/moving-platform traction and a measured tire-curve
-fitter remain gaps. The next bounded candidate is a guided measured traction/slip
-recording workflow, with fitting and held-out validation against actual hardware data.
+fitter remain gaps. Guided scalar sliding-onset measurement and portable validation
+are delivered in the [measured-grip follow-up](../measured-grip/RESULTS.md). Dynamic
+slip fitting still needs independent wheel/hub velocity, force/load and shaft-inertia
+recordings with held-out validation against actual hardware data.

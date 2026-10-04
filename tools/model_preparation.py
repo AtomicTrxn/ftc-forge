@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path, PurePosixPath
 import shutil
 import struct
@@ -227,6 +228,36 @@ def effective(p):return {k:p[k] for k in ['schema_version','model_kind','adapter
 def effective_digest(p):return digest(effective(p))
 
 
+def validate_grip_measurement(grip):
+    if 'measurement' not in grip:return
+    e=grip['measurement']
+    if not isinstance(e,dict) or e.get('schema_version')!=1 or e.get('method')!='restrained-wheel sliding onset':raise ValueError('Unsupported wheel measurement evidence')
+    if not isinstance(e.get('reference_surface'),str) or not e['reference_surface'].strip() or len(e['reference_surface'])>200 or not isinstance(e.get('recorded_joint'),str) or not e['recorded_joint'].strip():raise ValueError('Wheel measurements need their original joint and reference surface')
+    finite(e['surface_friction'],.000001,2)
+    if not isinstance(e.get('recording_sha256'),str) or not re.fullmatch('[0-9a-f]{64}',e['recording_sha256']):raise ValueError('Wheel measurement recording digest required')
+    if not isinstance(e.get('fit_context_sha256'),str) or not re.fullmatch('[0-9a-f]{64}',e['fit_context_sha256']):raise ValueError('Wheel measurement fit context digest required')
+    c=e['criteria']
+    for key,low,high in [('min_fit_trials',3,100),('min_validation_trials',2,100),('min_load_variation',.05,1),('max_relative_rmse',.01,.5),('max_trial_relative_rmse',.01,.75)]:finite(c[key],low,high)
+    if int(c['min_fit_trials'])!=c['min_fit_trials'] or int(c['min_validation_trials'])!=c['min_validation_trials']:raise ValueError('Grip trial counts must be integers')
+    readings=e['readings']
+    if not isinstance(readings,list) or not 1<=len(readings)<=1000:raise ValueError('Wheel evidence requires 1–1000 readings')
+    trials={}
+    for r in readings:
+        if not isinstance(r.get('trial'),str) or not r['trial'].strip() or len(r['trial'])>100 or '\n' in r['trial'] or '\r' in r['trial'] or r.get('set') not in ['fit','validate']:raise ValueError('Grip readings need trial IDs and fit/validate sets')
+        finite(r['normal_load_n'],.000001,100000);finite(r['sliding_force_n'],0,100000)
+        trial=trials.setdefault(r['trial'],[])
+        if trial and trial[0]['set']!=r['set']:raise ValueError('Reserve entire independent trials for grip validation')
+        trial.append(r)
+    fit=[rows for rows in trials.values() if rows[0]['set']=='fit'];validation=[rows for rows in trials.values() if rows[0]['set']=='validate']
+    if len(fit)<c['min_fit_trials'] or len(validation)<c['min_validation_trials']:raise ValueError('Insufficient independent grip trials')
+    means=[(sum(r['normal_load_n'] for r in rows)/len(rows),sum(r['sliding_force_n'] for r in rows)/len(rows)) for rows in fit]
+    coefficient=sum(n*f for n,f in means)/sum(n*n for n,f in means)/e['surface_friction']
+    if not math.isclose(coefficient,grip['friction'],rel_tol=1e-9,abs_tol=1e-9):raise ValueError('Wheel coefficient no longer matches measurements. Refit or discard the saved evidence for a manual assumption')
+    for value in e['result'].values():finite(value,0,1e15)
+    if not math.isclose(e['result']['wheel_coefficient'],coefficient,rel_tol=1e-9,abs_tol=1e-9):raise ValueError('Saved wheel fit changed; refit the readings')
+    # Native runtime validation recomputes the recording digest and every residual/quality gate.
+
+
 def validate(p):
     if p.get('schema_version')!=VERSION or p.get('model_kind') not in ['robot','field']:raise ValueError('Unsupported model profile version/type')
     canonical(p);par=p['parameters']
@@ -242,6 +273,7 @@ def validate(p):
             finite(grip['friction'],0,2)
             if grip['joint'] in seen:raise ValueError('Duplicate wheel friction setting: '+grip['joint'])
             seen.add(grip['joint'])
+            validate_grip_measurement(grip)
         joints={e['settings']['joint']['name'] for e in p['entities'].values() if e['settings']['joint']}
         if not p['migration']['pending'] and seen-joints:raise ValueError('Unknown wheel friction joint; select a current wheel or remove its override: '+', '.join(sorted(seen-joints)))
     if par['length_unit'] not in ['m','mm','in'] or par['up_axis'] not in ['Z','Y']:raise ValueError('Select length units and up axis')

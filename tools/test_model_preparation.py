@@ -61,6 +61,24 @@ class ModelPreparationTest(unittest.TestCase):
         for value in ['bad',[{'joint':'wheel_joint','friction':True}],[{'joint':'wheel_joint','friction':-1}],[{'joint':'wheel_joint','friction':2.1}],[{'joint':'missing','friction':.6}],[{'joint':'wheel_joint','friction':.6}]*2]:
             data=copy.deepcopy(original);data['runtime']['drive_contacts']['wheel_friction']=value;m.atomic_json(p,data)
             with self.assertRaises(ValueError):m.compile_profile(p)
+    def wheel_evidence(self):
+        readings=[{'trial':f'trial{i}','set':'fit' if i<3 else 'validate','normal_load_n':n,'sliding_force_n':f} for i,(n,f) in enumerate([(10.,4.5),(20.,9.),(30.,13.5),(15.,6.75),(25.,11.25)])]
+        csv='joint,trial,set,normal_load_n,sliding_force_n\n'+''.join(f'"wheel_joint","{r["trial"]}",{r["set"]},{r["normal_load_n"]},{r["sliding_force_n"]}\n' for r in readings)
+        recording_hash=m.hashlib.sha256(csv.encode()).hexdigest();context=m.hashlib.sha256((recording_hash+'\n'+json.dumps('Physical test surface')+'\n0.6\n3,2,0.2,0.15,0.25').encode()).hexdigest()
+        return {'schema_version':1,'method':'restrained-wheel sliding onset','recorded_joint':'wheel_joint','reference_surface':'Physical test surface','surface_friction':.6,'criteria':{'min_fit_trials':3,'min_validation_trials':2,'min_load_variation':.2,'max_relative_rmse':.15,'max_trial_relative_rmse':.25},'readings':readings,'recording_sha256':recording_hash,'fit_context_sha256':context,'result':{'wheel_coefficient':.75,'effective_mu':.45,'fit_trials':3,'validation_trials':2,'load_variation':2/3,'fit_rmse_n':0.,'validation_rmse_n':0.,'fit_relative_rmse':0.,'validation_relative_rmse':0.,'worst_trial_relative_rmse':0.}}
+    def test_measured_grip_evidence_is_portable_and_migrates_with_its_wheel(self):
+        saved,xml=self.measured_robot();p=m.fork_draft(saved,self.library);data=m.read(p);evidence=self.wheel_evidence();data['runtime']['drive_contacts']['wheel_friction']=[{'joint':'wheel_joint','friction':.75,'measurement':evidence}];data['provenance']['runtime/drive_contacts/wheel_friction/0/friction']='measured from physical trials';m.atomic_json(p,data);saved=self.ready(p);before=saved.read_bytes()
+        bundle=self.root/'measured-grip.zip';m.export_bundle(saved,bundle);restored=m.import_bundle(bundle,self.root/'portable');self.assertEqual(evidence,m.read(restored)['runtime']['drive_contacts']['wheel_friction'][0]['measurement']);self.assertTrue(m.verify_receipt(restored)['ready'])
+        self.zip(xml.replace('wheel_joint','renamed_joint'));changed=m.import_zip(self.package,self.root/'portable','robot',restored);grip=m.read(changed)['runtime']['drive_contacts']['wheel_friction'][0];self.assertEqual('renamed_joint',grip['joint']);self.assertEqual(evidence,grip['measurement']);self.assertFalse(m.verify_receipt(changed)['ready']);self.assertEqual(before,saved.read_bytes())
+    def test_stale_measured_coefficient_and_cross_set_trials_cannot_compile(self):
+        saved,_=self.measured_robot();p=m.fork_draft(saved,self.library);original=m.read(p)
+        for change in ['coefficient','trial','result']:
+            data=copy.deepcopy(original);evidence=self.wheel_evidence();grip={'joint':'wheel_joint','friction':.75,'measurement':evidence}
+            if change=='coefficient':grip['friction']=.8
+            if change=='trial':evidence['readings'][3]['trial']='trial0'
+            if change=='result':evidence['result']['wheel_coefficient']=.9
+            data['runtime']['drive_contacts']['wheel_friction']=[grip];m.atomic_json(p,data)
+            with self.assertRaises(ValueError):m.compile_profile(p)
     def test_legacy_modes_do_not_change_on_capture_reimport_or_migration(self):
         p=self.load();data=m.read(p);data['runtime'].pop('drive_contacts');m.atomic_json(p,data);saved=self.ready(p);self.assertNotIn('drive_contacts',m.read(self.load())['runtime'])
         self.zip(URDF.replace('0 0 .06','0 0 .07'));self.assertNotIn('drive_contacts',m.read(self.load(reuse=saved))['runtime'])
