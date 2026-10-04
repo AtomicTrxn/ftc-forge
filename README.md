@@ -64,11 +64,13 @@ Place `sim.config` at the team project root. Paths inside it are relative to tha
   "robotConfig": "robot_config.xml",
   "presetMotors": "preset_motors.json",
   "extraClasspath": [],
-  "imu_latency_ms": 8
+  "imu_latency_ms": 8,
+  "encoder_latency_ms": 8,
+  "battery": { "internal_voltage_v": 12.6, "internal_resistance_ohm": 0.15 }
 }
 ```
 
-`extraClasspath` may contain paths to local jars or class directories used by team code. They are added to both compilation and runtime class loading. `imu_latency_ms` accepts 0–200 and defaults to 8; yaw and yaw rate in the 3D renderer come from the physics chassis. Headless runs do not create a physics world, so their IMU remains at its initial orientation. The simulated chassis stays level, so pitch and roll remain zero.
+`extraClasspath` may contain paths to local jars or class directories used by team code. They are added to both compilation and runtime class loading. `imu_latency_ms` and `encoder_latency_ms` accept 0–200 and default to 8 (see [battery sag and bus latency](gui-runner/POWER_AND_BUS.md), including what is not modeled); yaw and yaw rate in the 3D renderer come from the physics chassis. Headless runs do not create a physics world, so their IMU remains at its initial orientation. The simulated chassis stays level, so pitch and roll remain zero.
 
 To import custom robot geometry, add `urdf` and optionally `total_mass_kg` and `vhacd_max_hulls`. See [the import guide](gui-runner/ROBOT_IMPORT.md) for the XML/URDF pairing, a sample package, and the current CAD export constraints.
 

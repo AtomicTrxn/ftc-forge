@@ -303,6 +303,7 @@ public class SimulatorApp extends SimpleApplication {
         RobotConfigXml xml = RobotConfigXml.parse(projectDir.resolve(simConfig.robotConfig).toFile());
         PresetRobotConfig preset = PresetRobotConfig.load(projectDir.resolve(simConfig.presetMotors));
         hardwareMap = HardwareMapBuilder.build(xml, preset);
+        simConfig.applyElectrical(hardwareMap);
         if (simConfig.calibration != null) {
             CalibrationProfile profile = CalibrationProfile.load(projectDir.resolve(simConfig.calibration));
             profile.applyHardware(hardwareMap);

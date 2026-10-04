@@ -59,6 +59,7 @@ public class Main {
         System.out.println("[EXECUTOR] Robot config: " + preset.name + " (" + xml.devices.size() + " devices)");
 
         HardwareMap hardwareMap = HardwareMapBuilder.build(xml, preset);
+        simConfig.applyElectrical(hardwareMap);
         if (simConfig.calibration != null) {
             CalibrationProfile.load(projectDir.resolve(simConfig.calibration)).applyHardware(hardwareMap);
             System.out.println("[CALIBRATION] Loaded " + simConfig.calibration);
