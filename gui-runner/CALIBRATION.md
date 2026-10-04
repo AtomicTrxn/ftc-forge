@@ -11,6 +11,11 @@ assumptions. It fits restrained-wheel sliding-onset force/load trials with indep
 validation and portable evidence. Motor and free-drive telemetry fitting below covers
 different response parameters; it does not identify tread/field friction.
 
+For an existing differential tire model, [Measure tire slip…](MEASURED_TIRE_SLIP.md)
+fits its steady longitudinal curve from direct force/load measurements and independent
+hub/wheel speeds. The ordinary motor-current telemetry file below is insufficient for
+this fit. Lateral behavior and reflected shaft inertia are retained as assumptions.
+
 Copy [`CalibrationRecorder.java`](sample-teamcode/TeamCode/src/main/java/org/firstinspires/ftc/teamcode/CalibrationRecorder.java) into your Android TeamCode source tree. It uses FTC SDK `DcMotorEx`, `HardwareMap`, and `CurrentUnit`. Create it once in an OpMode and close it when recording ends:
 
 ```java

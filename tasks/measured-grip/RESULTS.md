@@ -1,5 +1,9 @@
 # Measured wheel grip — results
 
+Changelog: the [measured tire-slip follow-up](../measured-tire-slip/RESULTS.md) now
+fits steady longitudinal curves from independent direct-force trials. Transient and
+shaft-inertia identification remain open.
+
 Published in [pull request #20](https://github.com/AtomicTrxn/ftc-forge/pull/20).
 
 ## Delivered
@@ -116,6 +120,8 @@ The experiment identifies scalar sliding-onset grip for one tread/surface/direct
 pair. Surface settings must match when reusing it. Optional tire curves remain a second
 limit; sliding-speed dependence, detailed asymmetric steering, rotating contact geometry,
 roller anisotropy, suspension and slopes remain gaps. Dynamic tire fitting needs
-independent wheel/hub velocities, force/load and shaft-inertia information. The next
-candidate is a recording and validation workflow for those data, with whole trials
-held out before fitting and explicit identification checks.
+independent wheel/hub velocities, force/load and shaft-inertia information. A
+steady direct-force recording and validation workflow is delivered in the
+[measured tire-slip follow-up](../measured-tire-slip/RESULTS.md), with whole trials held
+out and explicit identification checks. Acceleration/current-derived force and
+shaft-inertia fitting still need additional independent instrumentation and validation.

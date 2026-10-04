@@ -258,9 +258,33 @@ def validate_grip_measurement(grip):
     # Native runtime validation recomputes the recording digest and every residual/quality gate.
 
 
+def validate_tire_measurement(group, spec):
+    if 'measurement' not in spec:return
+    e=spec['measurement']
+    if not isinstance(e,dict) or e.get('schema_version')!=1 or e.get('method')!='steady direct-force longitudinal brush' or e.get('tire_class')!=group:raise ValueError('Unsupported tire measurement evidence/class')
+    for key in ['reference_surface','hub_speed_source','force_source']:
+        if not isinstance(e.get(key),str) or not e[key].strip() or len(e[key])>200:raise ValueError('Name independent tire measurement sources and reference surface')
+    if not isinstance(e.get('context_sha256'),str) or not re.fullmatch('[0-9a-f]{64}',e['context_sha256']):raise ValueError('Tire recording/context digest required')
+    readings=e['readings']
+    if not isinstance(readings,list) or not 1<=len(readings)<=1000:raise ValueError('Provide 1–1000 tire readings')
+    trials={}
+    for r in readings:
+        if not isinstance(r.get('recorded_joint'),str) or not r['recorded_joint'].strip() or not isinstance(r.get('trial'),str) or not r['trial'].strip() or r.get('set') not in ['fit','validate']:raise ValueError('Tire readings need original wheel, trial and partition')
+        finite(r['wheel_surface_mps'],-20,20);finite(r['hub_speed_mps'],-20,20);finite(r['normal_load_n'],.000001,100000);finite(r['longitudinal_force_n'],-100000,100000)
+        if (r['wheel_surface_mps']-r['hub_speed_mps'])*r['longitudinal_force_n']<0:raise ValueError('Tire force has inconsistent slip sign')
+        identity=(r['set'],r['recorded_joint'])
+        if trials.setdefault(r['trial'],identity)!=identity:raise ValueError('Keep each independent tire experiment in one set and on one wheel')
+    for key in ['static_mu','sliding_mu','stiffness_n_per_mps','transition_mps']:
+        finite(e['result'][key],.000001,100000)
+        if not math.isclose(spec[key],e['result'][key],rel_tol=1e-7,abs_tol=1e-7):raise ValueError('Tire setting no longer matches evidence: '+key+'. Refit or discard it')
+    # Native loading rechecks canonical context hash, optimization, all residuals and identification.
+
+
 def validate(p):
     if p.get('schema_version')!=VERSION or p.get('model_kind') not in ['robot','field']:raise ValueError('Unsupported model profile version/type')
     canonical(p);par=p['parameters']
+    if 'tires' in p['runtime']:
+        for group in ['traction','omni']:validate_tire_measurement(group,p['runtime']['tires'][group])
     if 'drive_contacts' in p['runtime']:
         c=p['runtime']['drive_contacts']
         if not isinstance(c.get('enabled'),bool):raise ValueError('drive_contacts.enabled must be true or false')
