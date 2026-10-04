@@ -2,6 +2,10 @@
 
 FTC Forge is a desktop Java simulator for testing FTC `LinearOpMode` and iterative `OpMode` code against a mocked FTC SDK. It compiles a team's `TeamCode` source, builds a hardware map from the robot configuration, and can run headlessly or in a 3D jMonkeyEngine field with a Bullet rigid-body chassis. Motor, battery, encoder, sensor, and optional URDF robot models provide a starting point for iteration before testing on the robot.
 
+Run reusable synthetic CAD and native physics scenarios with
+`./gradlew :gui-runner:validateSimulator`. JSON and Markdown reports, fixture packages and
+isolated settings are retained for each run. See [simulator validation](gui-runner/SIMULATOR_VALIDATION.md).
+
 ## Requirements
 
 - JDK 17 with the `jdk.compiler` module (a full JDK, not a JRE)

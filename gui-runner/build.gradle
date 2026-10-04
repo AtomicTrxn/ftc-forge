@@ -193,6 +193,16 @@ tasks.register('checkScene', JavaExec) {
     jvmArgs = ['-Djava.awt.headless=true']
     maxHeapSize = '2g'
 }
+
+tasks.register('validateSimulator', JavaExec) {
+    group = 'verification'
+    description = 'Runs reusable synthetic CAD import and native movement/contact scenarios; writes JSON and Markdown.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'simrunner.SimulatorValidation'
+    workingDir = rootProject.projectDir
+    jvmArgs = ['-Djava.awt.headless=true']
+    maxHeapSize = '2g'
+}
 tasks.register('previewScene', JavaExec) {
     group = 'application'
     classpath = sourceSets.main.runtimeClasspath
