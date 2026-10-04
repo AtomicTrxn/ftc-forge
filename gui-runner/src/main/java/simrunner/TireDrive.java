@@ -11,13 +11,15 @@ import java.util.*;
 /** Contact-supported individual tire forces with shared shaft inertia and equal tire reaction torque. */
 final class TireDrive {
     record Wheel(String joint, String motor, Vector3f hub, double inertia) {}
-    record State(String joint, boolean supported, double surfaceMps, double hubSpeedMps, double slipMps, double forceN, boolean sliding) {}
+    record State(String joint, boolean supported, double surfaceMps, double hubSpeedMps, double slipMps, double forceN, boolean sliding,double normalN,double gripN,double lateralN) {}
+    record Reaction(String motor,double contactTorqueNm,double shaftTorqueNm) { }
     private final PhysicsWorld world;
     private final DifferentialDriveConfig drive;
     private final TireDriveConfig config;
     private final List<Wheel> wheels;
     private final Map<String,Side> sides=new LinkedHashMap<>();
     private final List<State> states=new ArrayList<>();
+    private final List<Reaction> reactions=new ArrayList<>();
     private static final class Side {
         final SimDcMotorEx motor; final double sign, inertia;
         double omega, angle;
@@ -67,10 +69,12 @@ final class TireDrive {
     private static void collect(String name,RobotUrdf urdf,Set<String> result){result.add(name);for(var j:urdf.joints.values())if(j.parent().equals(name))collect(j.child(),urdf,result);}
     void tick(float dt) {
         if(dt<=0)return;
-        for(Side s:sides.values()) {
+        var beforeContact=new LinkedHashMap<String,Double>();
+        for(var entry:sides.entrySet()) {Side s=entry.getValue();
             s.sync();
             double torque=s.motor.externalShaftTorque()*s.sign;
             s.omega+=torque*dt/(s.inertia+dt*s.motor.externalTorqueDamping());
+            beforeContact.put(entry.getKey(),s.omega);
         }
         var body=world.chassisBody();
         Vector3f forward=world.getChassisRotation().mult(Vector3f.UNIT_X);forward.y=0;forward.normalizeLocal();
@@ -94,7 +98,7 @@ final class TireDrive {
             Vector3f velocity=body.getLinearVelocity().add(body.getAngularVelocity().cross(offset));
             double surface=side.omega*drive.wheelRadiusM();
             double slip=surface-velocity.dot(forward);
-            if(!supported[i]||!body.isDynamic()){states.add(new State(wheel.joint,false,surface,velocity.dot(forward),slip,0,false));continue;}
+            if(!supported[i]||!body.isDynamic()){states.add(new State(wheel.joint,false,surface,velocity.dot(forward),slip,0,false,0,0,0));continue;}
             TireFriction.Spec spec=config.omniJoints().contains(wheel.joint)?config.omni():config.traction();
             double rx=offset.cross(forward).y,ry=offset.cross(left).y;
             double invLong=1/world.driveMass()+rx*rx/world.driveYawInertia()+drive.wheelRadiusM()*drive.wheelRadiusM()/side.inertia;
@@ -102,16 +106,21 @@ final class TireDrive {
             double normal=world.driveContacts()==null?world.driveMass()*9.81/count:world.driveContacts().snapshot().wheels().stream().filter(w->w.joint().equals(wheel.joint)).mapToDouble(DriveContacts.Support::normalImpulse).sum()/dt;
             var force=TireFriction.solve(spec,slip,velocity.dot(left),normal,dt,invLong,invLat);
             double longitudinal=force.longitudinalN(),lateral=force.lateralN();boolean sliding=force.sliding();
+            double gripLimit=spec.staticMu()*normal;
             if(world.driveContacts()!=null) {
                 double grip=world.driveContacts().snapshot().wheels().stream().filter(w->w.joint().equals(wheel.joint)).mapToDouble(DriveContacts.Support::frictionImpulse).sum()/dt;
+                gripLimit=Math.min(gripLimit,grip);
                 double requested=Math.hypot(longitudinal,lateral);
                 if(requested>grip){double scale=grip/requested;longitudinal*=scale;lateral*=scale;sliding=true;}
             }
             body.applyImpulse(forward.mult((float)(longitudinal*dt)).add(left.mult((float)(lateral*dt))),offset);
             side.omega-=longitudinal*drive.wheelRadiusM()*dt/side.inertia;
-            states.add(new State(wheel.joint,true,surface,velocity.dot(forward),slip,longitudinal,sliding));
+            states.add(new State(wheel.joint,true,surface,velocity.dot(forward),slip,longitudinal,sliding,normal,gripLimit,lateral));
         }
-        for(Side s:sides.values()){s.angle+=s.omega*dt;s.sync();}
+        reactions.clear();
+        for(var entry:sides.entrySet()){Side s=entry.getValue();double contact=states.stream().filter(w->wheels.stream().anyMatch(layout->layout.joint.equals(w.joint)&&layout.motor.equals(entry.getKey()))).mapToDouble(State::forceN).sum()*drive.wheelRadiusM();
+            reactions.add(new Reaction(entry.getKey(),contact,(s.omega-beforeContact.get(entry.getKey()))*s.inertia/dt));s.angle+=s.omega*dt;s.sync();}
     }
     List<State> states(){return List.copyOf(states);}
+    List<Reaction> reactions(){return List.copyOf(reactions);}
 }

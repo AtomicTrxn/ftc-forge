@@ -5,6 +5,8 @@ FTC Forge is a desktop Java simulator for testing FTC `LinearOpMode` and iterati
 Run reusable synthetic CAD and native physics scenarios with
 `./gradlew :gui-runner:validateSimulator`. JSON and Markdown reports, fixture packages and
 isolated settings are retained for each run. See [simulator validation](gui-runner/SIMULATOR_VALIDATION.md).
+Add `--args='--matrix'` to check documented mass, wheel dimensions, grip, gearing and timestep
+ranges with native force, drift, stability and convergence bounds.
 
 ## Requirements
 

@@ -30,7 +30,12 @@ final class DriveContacts implements ContactListener {
         var other=first?b:a;
         if(!(other instanceof PhysicsRigidBody ground)||!ground.isStatic())return false;
         var normal=new Vector3f();ManifoldPoints.getNormalWorldOnB(point,normal);
-        return (first?normal.y:-normal.y)>=config.minSupportNormalY()&&ManifoldPoints.getDistance1(point)<=config.maxContactGapM();
+        if((first?normal.y:-normal.y)<config.minSupportNormalY()||ManifoldPoints.getDistance1(point)>config.maxContactGapM())return false;
+        // Bullet retains a manifold until collision detection on the next step. Reproject
+        // its local points through current transforms so teleports cannot reuse old support.
+        var localA=new Vector3f();var localB=new Vector3f();ManifoldPoints.getLocalPointA(point,localA);ManifoldPoints.getLocalPointB(point,localB);
+        var currentA=a.getPhysicsRotation(null).mult(localA).addLocal(a.getPhysicsLocation());var currentB=b.getPhysicsRotation(null).mult(localB).addLocal(b.getPhysicsLocation());
+        return currentA.subtract(currentB).dot(normal)<=config.maxContactGapM();
     }
     private String link(PhysicsCollisionObject a,long point) {return children.get(a==world.chassisBody()?ManifoldPoints.getIndex0(point):ManifoldPoints.getIndex1(point));}
     private static float friction(float value){return Math.max(-10,Math.min(10,value));}

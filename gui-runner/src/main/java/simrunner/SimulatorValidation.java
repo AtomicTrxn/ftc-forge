@@ -121,14 +121,18 @@ public final class SimulatorValidation {
         return r;
     }
     public static void main(String[] args)throws Exception {
-        Path output=Path.of("build/simulator-validation"),profile=null,project=null;
-        for(int i=0;i<args.length;i++){if(i+1>=args.length)throw new IllegalArgumentException("Each option needs a value: --output, --profile, --project");switch(args[i]){case "--output"->output=Path.of(args[++i]);case "--profile"->profile=Path.of(args[++i]);case "--project"->project=Path.of(args[++i]);default->throw new IllegalArgumentException("Unknown option: "+args[i]);}}
+        Path output=Path.of("build/simulator-validation"),profile=null,project=null,matrixConfig=null;boolean matrix=false;
+        for(int i=0;i<args.length;i++){if(args[i].equals("--matrix")){matrix=true;continue;}if(i+1>=args.length)throw new IllegalArgumentException("Option needs a value: "+args[i]);switch(args[i]){case "--output"->output=Path.of(args[++i]);case "--profile"->profile=Path.of(args[++i]);case "--project"->project=Path.of(args[++i]);case "--matrix-config"->matrixConfig=Path.of(args[++i]);default->throw new IllegalArgumentException("Unknown option: "+args[i]);}}
         if(project!=null&&profile==null)throw new IllegalArgumentException("--project requires --profile");
+        if(matrixConfig!=null&&!matrix)throw new IllegalArgumentException("--matrix-config requires --matrix");
+        if(matrix&&profile!=null)throw new IllegalArgumentException("Matrix uses synthetic dimensions; use --profile separately");
+        var cfg=matrix?ValidationMatrixConfig.load(matrixConfig):null;
         if(profile!=null&&output.toAbsolutePath().normalize().startsWith(profile.toRealPath().getParent()))throw new IllegalArgumentException("Choose an output outside the model directory");
         Path folder=Files.createDirectories(output.toAbsolutePath().normalize()).resolve("run-"+UUID.randomUUID());Files.createDirectories(folder);
         ValidationReport report;
         if(profile==null)report=suite(folder);
         else {NativeLibraryLoader.loadNativeLibrary("bulletjme",true);report=new ValidationReport();report.metadata.put("profile",profile.toAbsolutePath().toString());report.metadata.put("motion_timestep_s",(double)RobotMotionDemo.DT);Path p=profile,team=project;report.check("profile/configured-movements","Every configured motion occurs in its declared direction within joint limits",()->{var setup=RobotMotionDemo.setup(p,team);return movements(setup,setup.plan().items().size());});}
+        if(matrix)PhysicsValidationMatrix.append(report,folder.resolve("matrix"),cfg);
         report.metadata.putAll(Map.of("engine","Minie 9.0.3 / Bullet","java",System.getProperty("java.version"),"os",System.getProperty("os.name")));
         report.write(folder);System.out.println("[VALIDATION] "+(report.passed()?"PASS":"FAIL")+" "+report.cases.size()+" scenarios; "+folder.resolve("report.md"));
         if(!report.passed())throw new IllegalStateException("Simulator validation failed. Inspect "+folder.resolve("report.json"));
