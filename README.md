@@ -33,6 +33,8 @@ Fresh robot imports use [native wheel support and contact settings](gui-runner/D
 
 **Measure wheel grip…** provides a [guided force/load calibration](gui-runner/MEASURED_GRIP.md) with units, CSV exchange, independent validation trials and saved quality criteria. Passing measurements and their surface context travel with exported profiles and compatible CAD migration; applying them requires renewed collision and motion review.
 
+For configured differential tires, **Measure tire slip…** adds [steady longitudinal curve fitting](gui-runner/MEASURED_TIRE_SLIP.md) from independent speed/load/force CSV trials. It checks whether the data identify stiffness, peak/sliding grip and transition speed, validates reserved trials and preserves the evidence with portable settings. Lateral behavior and shaft inertia remain explicit assumptions.
+
 Imported robot collision coverage is checked per rigid body before physics starts. The selector's **Review collisions** action shows actual native shapes for the selected robot and field; C toggles collision shapes and V toggles CAD visibility. Save a coverage report with `./gradlew :gui-runner:auditCollisions --args='/absolute/robotProject /absolute/report.json'`. See [collision review](gui-runner/COLLISION_REVIEW.md).
 
 To use your own robot, replace `gui-runner/sample-teamcode` in the commands with an absolute path or a path relative to the repository root. The second argument is the annotated OpMode's class name or display name. The headless runner accepts an optional third argument for watchdog timeout in milliseconds.

@@ -90,6 +90,11 @@ preserves the evidence; compatible CAD migration remaps wheel targets and keeps 
 original measurement identity. Changed CAD requires renewed review. Manual changes can
 discard only the affected wheel's evidence; stale evidence otherwise fails native loading.
 
+[Measured tire-slip curves](MEASURED_TIRE_SLIP.md) store longitudinal force/speed/load
+trials, source context, bounds, quality/identification checks and fit results inside the
+selected tire class. Export/import and compatible CAD migration preserve this history.
+Changed numbers need refitting or explicit discard; changed CAD requires renewed review.
+
 Scene JSON stores model/revision references, robot pose, field-only/game-pieces mode and piece poses. Select source piece instances, duplicate or disable rows, and change starting positions/rotations. R restores those saved poses. Model physical properties stay in the model revision. Scene references use paths relative to the scene file; moving a library and its scenes together retains those references. For a separately relocated model, reopen the scene and select the replacement revision. Missing piece IDs receive selectable placement mappings or source-layout choices.
 
 Robot model settings can conflict with older project physics entries. Choose saved model or project values explicitly; the choice is saved as `model_settings`. Decomposition changes require review in the model editor. Hardware names continue to be checked against the selected project's FTC configuration; the editor offers available hardware names for rebinding. Changing geometry or bindings creates another reviewed revision.

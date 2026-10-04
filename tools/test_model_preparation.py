@@ -1,3 +1,4 @@
+import math
 import copy
 import json
 from pathlib import Path
@@ -78,6 +79,31 @@ class ModelPreparationTest(unittest.TestCase):
             if change=='trial':evidence['readings'][3]['trial']='trial0'
             if change=='result':evidence['result']['wheel_coefficient']=.9
             data['runtime']['drive_contacts']['wheel_friction']=[grip];m.atomic_json(p,data)
+            with self.assertRaises(ValueError):m.compile_profile(p)
+    def tire_evidence(self):
+        spec={'static_mu':.9,'sliding_mu':.6,'lateral_scale':1.,'stiffness_n_per_mps':100.,'transition_mps':.15}
+        readings=[]
+        for i in range(18):
+            slip=(-1 if i%2 else 1)*(.01+i*.03);normal=5.+i%3*5.
+            force=math.copysign(min(100*abs(slip),(.6+.3*math.exp(-(slip/.15)**2))*normal),slip)
+            readings.append({'recorded_joint':'wheel_joint','trial':f'trial{i}','set':'fit' if i<12 else 'validate','wheel_surface_mps':.3+slip,'hub_speed_mps':.3,'normal_load_n':normal,'longitudinal_force_n':force})
+        # Backend metadata/transport fixture; full hash/fit checks are covered by native Java tests.
+        evidence={'schema_version':1,'method':'steady direct-force longitudinal brush','tire_class':'traction','reference_surface':'Synthetic fixture','hub_speed_source':'Independent optical fixture','force_source':'Direct sensor fixture','context_sha256':'a'*64,'readings':readings,'bounds':{},'criteria':{},'result':{k:v for k,v in spec.items() if k!='lateral_scale'}}
+        spec['measurement']=evidence
+        return {'traction':spec,'omni':{'static_mu':.8,'sliding_mu':.5,'lateral_scale':.05,'stiffness_n_per_mps':80.,'transition_mps':.2},'omni_joints':[],'reflected_motor_inertia_kg_m2':.0015,'contact_tolerance_m':.004}
+    def test_tire_evidence_transport_and_cad_migration_preserve_original_measurements(self):
+        saved,xml=self.measured_robot();p=m.fork_draft(saved,self.library);data=m.read(p);tires=self.tire_evidence();data['runtime']['tires']=tires;m.atomic_json(p,data);saved=self.ready(p);original=saved.read_bytes()
+        bundle=self.root/'tire.zip';m.export_bundle(saved,bundle);restored=m.import_bundle(bundle,self.root/'portable');self.assertEqual(tires,m.read(restored)['runtime']['tires'])
+        self.zip(xml.replace('wheel_joint','renamed_joint'));changed=m.import_zip(self.package,self.root/'portable','robot',restored);self.assertEqual(tires,m.read(changed)['runtime']['tires']);self.assertFalse(m.verify_receipt(changed)['ready']);self.assertEqual(original,saved.read_bytes())
+    def test_tire_evidence_rejects_wrong_class_sign_leakage_and_manual_parameter_changes(self):
+        saved,_=self.measured_robot();p=m.fork_draft(saved,self.library);original=m.read(p)
+        for change in ['class','sign','partition','parameter']:
+            data=copy.deepcopy(original);tires=self.tire_evidence();e=tires['traction']['measurement']
+            if change=='class':e['tire_class']='omni'
+            if change=='sign':e['readings'][0]['longitudinal_force_n']*=-1
+            if change=='partition':e['readings'][-1]['trial']='trial0'
+            if change=='parameter':tires['traction']['stiffness_n_per_mps']=120.
+            data['runtime']['tires']=tires;m.atomic_json(p,data)
             with self.assertRaises(ValueError):m.compile_profile(p)
     def test_legacy_modes_do_not_change_on_capture_reimport_or_migration(self):
         p=self.load();data=m.read(p);data['runtime'].pop('drive_contacts');m.atomic_json(p,data);saved=self.ready(p);self.assertNotIn('drive_contacts',m.read(self.load())['runtime'])

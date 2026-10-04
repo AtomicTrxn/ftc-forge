@@ -16,9 +16,14 @@ public record TireDriveConfig(TireFriction.Spec traction, TireFriction.Spec omni
             throw new IllegalArgumentException("Invalid tire inertia/contact tolerance");
     }
     @SuppressWarnings("unchecked") static TireDriveConfig parse(Map<String,Object> values) {
+        return parse(values,true);
+    }
+    @SuppressWarnings("unchecked") static TireDriveConfig parse(Map<String,Object> values,boolean checkMeasurements) {
         if(!(values.getOrDefault("omni_joints",List.of()) instanceof List<?> names)||names.stream().anyMatch(x->!(x instanceof String)))
             throw new IllegalArgumentException("omni_joints requires an array of joint names");
-        return new TireDriveConfig(spec((Map<String,Object>)values.get("traction")),spec((Map<String,Object>)values.get("omni")),
+        var traction=spec((Map<String,Object>)values.get("traction"));var omni=spec((Map<String,Object>)values.get("omni"));
+        if(checkMeasurements)for(String group:List.of("traction","omni")){var v=FieldPackage.map(values.get(group));if(v.containsKey("measurement"))try{TireSlipMeasurement.check(FieldPackage.map(v.get("measurement")),group,group.equals("traction")?traction:omni);}catch(Exception e){throw new IllegalArgumentException("Tire class "+group+": "+e.getMessage(),e);}}
+        return new TireDriveConfig(traction,omni,
             (List<String>)values.getOrDefault("omni_joints",List.of()),n(values,"reflected_motor_inertia_kg_m2"),n(values,"contact_tolerance_m"));
     }
     private static TireFriction.Spec spec(Map<String,Object> v) {

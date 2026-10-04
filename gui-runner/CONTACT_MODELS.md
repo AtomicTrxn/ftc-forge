@@ -35,6 +35,13 @@ The original imported wheel tensors supply rotational inertia. `reflected_motor_
 
 These are **unmeasured baselines**, not manufacturer tire measurements. Completed runs print `[TIRES]` support, wheel surface speed, hub speed, slip, longitudinal force and sliding state. Existing calibration profiles' drive response/acceleration parameters apply to the legacy controller; the current telemetry fitter does not estimate tire friction or reflected inertia.
 
+**Measure tire slip…** in guided Physics assumptions now provides a separate
+[steady direct-force fitting workflow](MEASURED_TIRE_SLIP.md) for longitudinal tire
+stiffness, peak/sliding friction and transition speed. It requires independent hub
+speed and force/load measurements, checks parameter identification and reserved trials,
+and carries evidence through export/import and CAD migration. Lateral scale and
+reflected inertia remain explicit assumptions. Native material grip is still a second cap.
+
 ## Flexible paddles
 
 Each double-ended rubber paddle has two arms with three collidable segments per arm. Native [Minie spring constraints](https://stephengold.github.io/Minie/javadoc/master/com/jme3/bullet/joints/New6Dof.html) provide bending stiffness, damping and angular stops. Finite [contact stiffness/damping](https://stephengold.github.io/Minie/javadoc/master/com/jme3/bullet/collision/PhysicsCollisionObject.html#setContactStiffness(float)) soften impacts. Contact and bending loads pass through the physical shaft into motor torque/current feedback. Contact-mode chain coupling locks relative shaft orientation while leaving translation free, preventing the velocity-only gear constraint's phase drift under load.

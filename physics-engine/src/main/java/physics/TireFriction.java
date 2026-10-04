@@ -13,6 +13,15 @@ public final class TireFriction {
         }
     }
     public record Force(double longitudinalN, double lateralN, boolean sliding) {}
+    public static double coefficient(Spec spec,double speedMps) {
+        return spec.slidingMu+(spec.staticMu-spec.slidingMu)*Math.exp(-Math.pow(speedMps/spec.transitionMps,2));
+    }
+    /** Continuous steady, purely longitudinal envelope; no acceleration/inertia fit. */
+    public static double steadyLongitudinal(Spec spec,double slipMps,double normalN) {
+        if(!Double.isFinite(slipMps)||!Double.isFinite(normalN)||normalN<0)
+            throw new IllegalArgumentException("Steady slip/load must be finite and load nonnegative");
+        return Math.copySign(Math.min(spec.stiffnessNPerMps*Math.abs(slipMps),coefficient(spec,Math.abs(slipMps))*normalN),slipMps);
+    }
     /** Slip is wheel surface speed minus hub speed; lateral velocity is hub relative to ground. */
     public static Force solve(Spec spec, double slipMps, double lateralMps, double normalN,
                               double dt, double inverseLongMass, double inverseLatMass) {
@@ -22,7 +31,7 @@ public final class TireFriction {
             throw new IllegalArgumentException("Contact load/inverse mass must be nonnegative and timestep positive");
         if (normalN == 0) return new Force(0,0,false);
         double speed=Math.hypot(slipMps,lateralMps);
-        double mu=spec.slidingMu+(spec.staticMu-spec.slidingMu)*Math.exp(-Math.pow(speed/spec.transitionMps,2));
+        double mu=coefficient(spec,speed);
         double cap=mu*normalN;
         double fx=spec.stiffnessNPerMps*slipMps/(1+spec.stiffnessNPerMps*dt*inverseLongMass);
         double ky=spec.stiffnessNPerMps*spec.lateralScale;

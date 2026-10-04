@@ -126,6 +126,30 @@ final class GuidedSetupController {
         session.data.put("scene_validation",null);session.data.remove("project_check");session.data.remove("opmodes");session.save();
         compile("robot");
     }
+    Map<String,List<String>> tireClassChoices()throws Exception {
+        var runtime=FieldPackage.map(session.profile("robot").get("runtime"));
+        if(!runtime.containsKey("drive")||!runtime.containsKey("tires"))throw new IllegalArgumentException("Configure an existing differential tire model in Advanced settings first. Tire fitting does not enable an unconfigured model.");
+        var cfg=TireDriveConfig.parse(FieldPackage.map(runtime.get("tires")),false);var wheels=wheelGripChoices().keySet();var result=new LinkedHashMap<String,List<String>>();
+        for(String group:List.of("traction","omni")){var names=wheels.stream().filter(j->cfg.omniJoints().contains(j)==group.equals("omni")).sorted().toList();if(!names.isEmpty())result.put(group,names);}
+        if(result.isEmpty())throw new IllegalArgumentException("Bind continuous differential wheel joints before fitting tires");return result;
+    }
+    void measuredTireSlip(String group,Map<String,Object> evidence,boolean physicalConfirmed)throws Exception {
+        if(!physicalConfirmed)throw new IllegalArgumentException("Confirm independent physical steady force/load/speed measurements first");
+        if(!tireClassChoices().containsKey(group))throw new IllegalArgumentException("Choose a configured tire class");
+        var profile=session.profile("robot");var tires=FieldPackage.map(FieldPackage.map(profile.get("runtime")).get("tires"));var current=TireDriveConfig.parse(tires,false);double lateral=(group.equals("traction")?current.traction():current.omni()).lateralScale();
+        var allowed=new HashSet<>(tireClassChoices().get(group));var prior=FieldPackage.map(tires.get(group));
+        if(prior.containsKey("measurement"))for(var row:TireSlipMeasurement.readings(FieldPackage.map(prior.get("measurement"))))allowed.add(row.recordedJoint());
+        if(TireSlipMeasurement.readings(evidence).stream().anyMatch(row->!allowed.contains(row.recordedJoint())))throw new IllegalArgumentException("Recording targets wheels outside this tire class; import the correct class's readings");
+        var result=FieldPackage.map(evidence.get("result"));var spec=new physics.TireFriction.Spec(FieldPackage.num(result,"static_mu"),FieldPackage.num(result,"sliding_mu"),lateral,FieldPackage.num(result,"stiffness_n_per_mps"),FieldPackage.num(result,"transition_mps"));
+        TireSlipMeasurement.check(evidence,group,spec);var values=FieldPackage.map(tires.get(group));values.putAll(TireSlipMeasurement.spec(spec));values.put("measurement",evidence);
+        var labels=FieldPackage.map(profile.get("provenance"));for(String key:List.of("static_mu","sliding_mu","stiffness_n_per_mps","transition_mps"))labels.put("runtime/tires/"+group+"/"+key,"measured from steady direct-force tire trials; independent validation passed");
+        labels.put("runtime/tires/"+group+"/measurement","supplied physical readings and reserved validation evidence");update("robot",profile);compile("robot");
+    }
+    void discardTireMeasurements(String group)throws Exception {
+        if(!tireClassChoices().containsKey(group))throw new IllegalArgumentException("Choose a configured tire class");
+        var profile=session.profile("robot");var values=FieldPackage.map(FieldPackage.map(FieldPackage.map(profile.get("runtime")).get("tires")).get(group));if(values.remove("measurement")==null)return;
+        var labels=FieldPackage.map(profile.get("provenance"));labels.keySet().removeIf(k->k.startsWith("runtime/tires/"+group+"/measurement"));for(String key:List.of("static_mu","sliding_mu","stiffness_n_per_mps","transition_mps"))labels.put("runtime/tires/"+group+"/"+key,"user supplied: manual tire assumption; measurement evidence discarded");update("robot",profile);compile("robot");
+    }
     Path motionReport(){return session.file.getParent().resolve("motion-demos").resolve(session.file.getFileName());}
     void continueAfterMotion() throws Exception {session.acknowledge(new GuidedSetupSession.Step("robot","motion"));}
     RobotMotionDemo.Setup motionSetup() throws Exception {compile("robot");return RobotMotionDemo.setup(session.modelPath("robot"),session.project());}

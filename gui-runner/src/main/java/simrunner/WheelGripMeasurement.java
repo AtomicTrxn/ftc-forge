@@ -81,7 +81,7 @@ final class WheelGripMeasurement {
     private static String hash(String value)throws Exception{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));}
     private static String contextHash(String recordingHash,String surface,double coefficient,Criteria c)throws Exception{return hash(recordingHash+"\n"+ProfileIO.json(surface)+"\n"+coefficient+"\n"+c.minFitTrials()+","+c.minValidationTrials()+","+c.minLoadVariation()+","+c.maxRelativeRmse()+","+c.maxTrialRelativeRmse());}
     private static String quoted(String value){if(value.contains("\n")||value.contains("\r"))throw new IllegalArgumentException("CSV names must fit on one line.");return "\""+value.replace("\"","\"\"")+"\"";}
-    private static List<String> csvLine(String line) {
+    static List<String> csvLine(String line) {
         var values=new ArrayList<String>();var value=new StringBuilder();boolean quote=false,closed=false;
         for(int i=0;i<line.length();i++){char c=line.charAt(i);if(quote){if(c=='"'){if(i+1<line.length()&&line.charAt(i+1)=='"'){value.append('"');i++;}else {quote=false;closed=true;}}else value.append(c);}else if(c==','){values.add(value.toString());value.setLength(0);closed=false;}else if(c=='"'){if(value.length()!=0||closed)throw new IllegalArgumentException("Unexpected CSV quote.");quote=true;}else if(closed){if(!Character.isWhitespace(c))throw new IllegalArgumentException("Unexpected text after quoted CSV value.");}else value.append(c);}
         if(quote)throw new IllegalArgumentException("Unclosed CSV quote; multiline values are unsupported.");values.add(value.toString());return values;
