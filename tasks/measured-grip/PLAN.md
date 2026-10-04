@@ -42,4 +42,4 @@ available here: synthetic recovery tests verify software, not actual robot accur
 - [x] Inspect current calibration and choose scope.
 - [x] Implement fitting, guided controls and portable evidence.
 - [x] Verify physics, data quality and workflows.
-- [ ] Document and ship.
+- [x] Document and publish [PR #20](https://github.com/AtomicTrxn/ftc-forge/pull/20).

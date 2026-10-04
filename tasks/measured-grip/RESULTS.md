@@ -1,5 +1,7 @@
 # Measured wheel grip — results
 
+Published in [pull request #20](https://github.com/AtomicTrxn/ftc-forge/pull/20).
+
 ## Delivered
 
 - **Measure wheel grip…** guides the selected configured wheel through physical
