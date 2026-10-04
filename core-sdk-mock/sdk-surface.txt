@@ -1,0 +1,48 @@
+# SDK surface manifest: one stub class per line, `class | status | required public members`.
+# Audited by SdkSurfaceTest: every stub class must be listed, every listed member must exist.
+# Status: simulated = behavior wired to the simulator; state-only = holds state, no physics;
+#         shim = API-compatible replacement with console output; inert = accepts calls, returns constants; support = data/utility types.
+# Update this file (and SDK_COVERAGE.md if support level changes) whenever a stub class or member is added.
+com.acmerobotics.dashboard.FtcDashboard | shim | getConfigSnapshot,getInstance,getTelemetry,registerConfigClass,sendTelemetryPacket
+com.acmerobotics.dashboard.canvas.Canvas | shim | drawGrid,fillCircle,fillPolygon,fillRect,fillText,setAlpha,setFill,setRotation,setScale,setStroke,setStrokeWidth,setTranslation,strokeCircle,strokeLine,strokePolygon,strokePolyline,strokeRect
+com.acmerobotics.dashboard.config.Config | shim | value
+com.acmerobotics.dashboard.telemetry.MultipleTelemetry | shim | addData,addLine,clear,log,setAutoClear,setMsTransmissionInterval,update
+com.acmerobotics.dashboard.telemetry.TelemetryPacket | shim | addLine,clearLines,fieldOverlay,getData,getLines,put,putAll
+com.qualcomm.hardware.gobilda.GoBildaPinpointDriver | simulated | close,getConnectionInfo,getDeviceID,getDeviceName,getDeviceStatus,getDeviceVersion,getEncoderX,getEncoderY,getFrequency,getHeading,getHeadingVelocity,getLoopTime,getPosX,getPosY,getPosition,getVelX,getVelY,getVelocity,getXOffset,getYOffset,getYawScalar,recalibrateIMU,resetPosAndIMU,setEncoderDirections,setEncoderResolution,setHeading,setOffsets,setPosX,setPosY,setPosition,setYawScalar,update
+com.qualcomm.hardware.lynx.LynxModule | simulated | clearBulkCache,close,getBulkCachingMode,getConnectionInfo,getDeviceName,getVoltage,setBulkCachingMode
+com.qualcomm.hardware.rev.RevHubOrientationOnRobot | support | getLogoFacingDirection,getUsbFacingDirection
+com.qualcomm.hardware.sparkfun.SparkFunOTOS | simulated | begin,calibrateImu,close,getAcceleration,getAccelerationStdDev,getAngularScalar,getAngularUnit,getConnectionInfo,getDeviceName,getImuCalibrationProgress,getLinearScalar,getLinearUnit,getOffset,getPosVelAcc,getPosVelAccAndStdDev,getPosVelAccStdDev,getPosition,getPositionStdDev,getSignalProcessConfig,getStatus,getVelocity,getVelocityStdDev,getVersionInfo,isConnected,resetTracking,selfTest,setAngularScalar,setAngularUnit,setLinearScalar,setLinearUnit,setOffset,setPosition,setSignalProcessConfig
+com.qualcomm.robotcore.eventloop.opmode.Autonomous | support | group,name,preselectTeleOp
+com.qualcomm.robotcore.eventloop.opmode.Disabled | support | 
+com.qualcomm.robotcore.eventloop.opmode.LinearOpMode | simulated | idle,init,isStarted,isStopRequested,loop,opModeInInit,opModeIsActive,runOpMode,sleep,waitForStart
+com.qualcomm.robotcore.eventloop.opmode.OpMode | simulated | getRuntime,init,init_loop,loop,resetRuntime,start,stop
+com.qualcomm.robotcore.eventloop.opmode.TeleOp | support | group,name
+com.qualcomm.robotcore.hardware.CRServo | state-only | 
+com.qualcomm.robotcore.hardware.ColorSensor | inert | alpha,blue,green,red
+com.qualcomm.robotcore.hardware.DcMotor | simulated | getCurrentPosition,getMode,getTargetPosition,getZeroPowerBehavior,isBusy,setMode,setTargetPosition,setZeroPowerBehavior
+com.qualcomm.robotcore.hardware.DcMotorEx | simulated | getCurrent,getPIDFCoefficients,getVelocity,setCurrentAlert,setPIDFCoefficients,setVelocity
+com.qualcomm.robotcore.hardware.DcMotorSimple | simulated | getDirection,getPower,setDirection,setPower
+com.qualcomm.robotcore.hardware.DistanceSensor | inert | getDistance
+com.qualcomm.robotcore.hardware.Gamepad | inert | rumble,setLedColor
+com.qualcomm.robotcore.hardware.HardwareDevice | support | close,getConnectionInfo,getDeviceName
+com.qualcomm.robotcore.hardware.HardwareMap | simulated | get,getAll,getNamesOf,tryGet
+com.qualcomm.robotcore.hardware.IMU | simulated | getRobotAngularVelocity,getRobotYawPitchRollAngles,initialize,resetYaw
+com.qualcomm.robotcore.hardware.PIDFCoefficients | support | 
+com.qualcomm.robotcore.hardware.Servo | state-only | getDirection,getPosition,setDirection,setPosition
+com.qualcomm.robotcore.hardware.TouchSensor | inert | isPressed
+com.qualcomm.robotcore.hardware.VoltageSensor | simulated | getVoltage
+com.qualcomm.robotcore.util.ElapsedTime | support | milliseconds,nanoseconds,reset,seconds
+com.qualcomm.robotcore.util.Range | support | clip
+com.qualcomm.robotcore.util.RobotLog | support | a,d,e,ii,w
+org.firstinspires.ftc.robotcore.external.Telemetry | support | addData,addLine,clear,log,setAutoClear,setMsTransmissionInterval,update
+org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName | inert | close,getConnectionInfo,getDeviceName
+org.firstinspires.ftc.robotcore.external.navigation.AngleUnit | support | fromDegrees,fromRadians,toDegrees,toRadians
+org.firstinspires.ftc.robotcore.external.navigation.AngularVelocity | support | getUnit
+org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit | support | fromAmps
+org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit | support | fromMeters,fromMm,toMeters,toMm
+org.firstinspires.ftc.robotcore.external.navigation.Pose2D | support | getHeading,getX,getY
+org.firstinspires.ftc.robotcore.external.navigation.UnnormalizedAngleUnit | support | fromRadians,toRadians
+org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles | support | getAcquisitionTime,getPitch,getRoll,getYaw
+org.firstinspires.ftc.vision.VisionPortal | inert | close,getCameraState
+org.firstinspires.ftc.vision.apriltag.AprilTagDetection | inert | 
+org.firstinspires.ftc.vision.apriltag.AprilTagProcessor | inert | getDetections

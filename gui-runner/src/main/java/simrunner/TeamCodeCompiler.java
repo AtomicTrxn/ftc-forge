@@ -52,7 +52,13 @@ public class TeamCodeCompiler {
         fileManager.close();
 
         if (!success) {
-            throw new IllegalStateException("Team code failed to compile:\n" + diagnostics.messages);
+            StringBuilder message = new StringBuilder("Team code failed to compile:\n").append(diagnostics.messages);
+            List<String> notes = UnsupportedApiHints.notes(diagnostics.unresolvedImports);
+            if (!notes.isEmpty()) {
+                message.append("\nSimulator support notes (this API is not simulated; the code may be fine on a robot):\n");
+                notes.forEach(note -> message.append(note).append('\n'));
+            }
+            throw new IllegalStateException(message.toString());
         }
         return outputDir;
     }
@@ -79,8 +85,21 @@ public class TeamCodeCompiler {
 
     private static class StringWriterDiagnostics implements DiagnosticListener<JavaFileObject> {
         final StringBuilder messages = new StringBuilder();
+        final Set<String> unresolvedImports = new LinkedHashSet<>();
         @Override public void report(Diagnostic<? extends JavaFileObject> diagnostic) {
             messages.append(diagnostic.toString()).append('\n');
+            if (diagnostic.getKind() != Diagnostic.Kind.ERROR || diagnostic.getSource() == null) return;
+            try {
+                String source = diagnostic.getSource().getCharContent(true).toString();
+                String[] lines = source.split("\n", -1);
+                int index = (int) diagnostic.getLineNumber() - 1;
+                if (index >= 0 && index < lines.length) {
+                    String name = UnsupportedApiHints.importedName(lines[index]);
+                    if (name != null) unresolvedImports.add(name);
+                }
+            } catch (IOException ignored) {
+                // The raw javac message is already recorded; hints are best-effort.
+            }
         }
     }
 }

@@ -12,6 +12,11 @@ Both 3D windows offer [live physics diagnostics](gui-runner/PHYSICS_DIAGNOSTICS.
 toggles native contact/load and drive-force vectors, wheel grip/slip, motor effort/current,
 and mechanism travel/limits; **P** saves a read-only snapshot. **C** still shows collision shapes.
 
+Library compatibility: hubs are `LynxModule`s, and goBILDA Pinpoint and SparkFun OTOS devices report the
+physics pose. [`gui-runner/COMPATIBILITY.md`](gui-runner/COMPATIBILITY.md) says exactly what the Road Runner- and
+Pedro-style fixtures prove; [`core-sdk-mock/SDK_COVERAGE.md`](core-sdk-mock/SDK_COVERAGE.md) lists the stub surface, and
+compile errors for unsupported APIs now explain themselves.
+
 ## Requirements
 
 - JDK 17 with the `jdk.compiler` module (a full JDK, not a JRE)

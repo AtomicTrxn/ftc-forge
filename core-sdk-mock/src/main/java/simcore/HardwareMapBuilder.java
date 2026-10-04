@@ -53,6 +53,12 @@ public class HardwareMapBuilder {
                 case TOUCH_SENSOR:
                     map.register(entry.name, new SimTouchSensor(entry.name));
                     break;
+                case PINPOINT:
+                    map.register(entry.name, new com.qualcomm.hardware.gobilda.GoBildaPinpointDriver(entry.name));
+                    break;
+                case OTOS:
+                    map.register(entry.name, new com.qualcomm.hardware.sparkfun.SparkFunOTOS(entry.name));
+                    break;
                 default:
                     System.out.println("[WARN] Unrecognized device tag <" + entry.tag + "> for \""
                         + entry.name + "\" -- skipping. See RobotConfigXml.resolveType.");

@@ -1,18 +1,14 @@
 package simcore;
 
-import com.qualcomm.robotcore.hardware.VoltageSensor;
+import com.qualcomm.hardware.lynx.LynxModule;
 
-/** Reflects the real, shared battery-sag voltage HardwareMapBuilder computes each tick (R4), not a constant. */
-public class SimVoltageSensor implements VoltageSensor {
-    private final String name;
-    private volatile double voltage = 12.6;
+/**
+ * A simulated hub: a LynxModule (so team code can call getAll(LynxModule.class) for bulk
+ * caching, as the Road Runner quickstart does) whose VoltageSensor reading reflects the
+ * real, shared battery-sag voltage HardwareMapBuilder computes each tick (R4), not a constant.
+ */
+public class SimVoltageSensor extends LynxModule {
+    public SimVoltageSensor(String name) { super(name); }
 
-    public SimVoltageSensor(String name) { this.name = name; }
-
-    public void setVoltage(double v) { this.voltage = v; }
-
-    @Override public double getVoltage() { return voltage; }
-    @Override public String getDeviceName() { return name; }
-    @Override public String getConnectionInfo() { return "Simulated voltage sensor \"" + name + "\""; }
-    @Override public void close() { }
+    @Override public String getConnectionInfo() { return "Simulated hub \"" + getDeviceName() + "\""; }
 }

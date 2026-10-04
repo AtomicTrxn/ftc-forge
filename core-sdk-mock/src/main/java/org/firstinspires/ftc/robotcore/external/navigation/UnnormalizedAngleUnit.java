@@ -1,11 +1,8 @@
 package org.firstinspires.ftc.robotcore.external.navigation;
 
-public enum AngleUnit {
+/** Angle unit whose values are not wrapped into a single revolution (used for headings and rates). */
+public enum UnnormalizedAngleUnit {
     DEGREES, RADIANS;
-
-    public double fromDegrees(double degrees) {
-        return this == DEGREES ? degrees : Math.toRadians(degrees);
-    }
 
     public double fromRadians(double radians) {
         return this == RADIANS ? radians : Math.toDegrees(radians);
@@ -13,9 +10,5 @@ public enum AngleUnit {
 
     public double toRadians(double value) {
         return this == RADIANS ? value : Math.toRadians(value);
-    }
-
-    public double toDegrees(double value) {
-        return this == DEGREES ? value : Math.toDegrees(value);
     }
 }

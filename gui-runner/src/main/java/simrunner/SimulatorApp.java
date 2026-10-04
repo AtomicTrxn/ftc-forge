@@ -448,6 +448,12 @@ public class SimulatorApp extends SimpleApplication {
         for (IMU imu : hardwareMap.getAll(IMU.class)) {
             ((SimIMU) imu).update(yawRad, yawRateRadS, Math.round(simTimeMs));
         }
+        // Odometry computers (Pinpoint/OTOS): field x forward, y left (jME z is the opposite of y).
+        Vector3f chassisVelocity = physicsWorld.chassisBody().getLinearVelocity();
+        for (simcore.PoseSink odometry : hardwareMap.getAll(simcore.PoseSink.class)) {
+            Vector3f at = physicsWorld.getChassisPosition();
+            odometry.onChassisPose(at.x, -at.z, yawRad, chassisVelocity.x, -chassisVelocity.z, yawRateRadS);
+        }
 
         // Legacy servo intake defaults; an explicit motor intake uses physical shaft speed.
         Servo claw = hardwareMap.tryGet(Servo.class, "claw");

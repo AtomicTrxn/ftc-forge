@@ -63,6 +63,8 @@ public class RobotConfigXml {
     /** Resolves an XML tag name to a device-type category using the naming convention in R3's example. */
     public static DeviceType resolveType(String tag) {
         String t = tag.toLowerCase();
+        if (t.contains("pinpoint")) return DeviceType.PINPOINT;
+        if (t.contains("otos")) return DeviceType.OTOS;
         if (t.contains("crservo")) return DeviceType.CR_SERVO;
         if (t.contains("servo")) return DeviceType.SERVO;
         if (t.contains("motor")) return DeviceType.MOTOR;
@@ -73,5 +75,5 @@ public class RobotConfigXml {
         return DeviceType.UNKNOWN;
     }
 
-    public enum DeviceType { MOTOR, SERVO, CR_SERVO, IMU, DISTANCE_SENSOR, COLOR_SENSOR, TOUCH_SENSOR, UNKNOWN }
+    public enum DeviceType { MOTOR, SERVO, CR_SERVO, IMU, DISTANCE_SENSOR, COLOR_SENSOR, TOUCH_SENSOR, PINPOINT, OTOS, UNKNOWN }
 }
