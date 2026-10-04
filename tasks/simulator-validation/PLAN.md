@@ -23,22 +23,23 @@ real robot accuracy or approve a user's collision review/calibration.
   measured values, failure details, scope, engine/timestep metadata and nonzero exit on failure.
   Support checking declared movements of an existing prepared robot profile as well.
 - [x] Add automated positive and negative tests; run native scenarios and existing affected tests.
-- [ ] Ship item 1 in its own merged PR (implementation and documentation verified).
+- [x] Ship item 1 in its own merged PR (implementation and documentation verified).
 
 Acceptance: one documented command produces an inspectable pass/fail report without private
 CAD; a deliberately broken expectation fails, without suppressing the other scenario results.
 
 ## 2. Physics configuration and timestep matrix
 
-- [ ] Extend the runner with bounded mass, radius, track width, gearing, grip and timestep
+- [x] Extend the runner with bounded mass, radius, track width, gearing, grip and timestep
   cases. Use independent analytic bounds and comparison tolerances, not golden positions.
-- [ ] Check finite motion, mass counted once, material force bounds, zero-grip response,
+- [x] Check finite motion, mass counted once, material force bounds, zero-grip response,
   zero-command drift, unpowered dissipation, blocked movement and convergence.
-- [ ] Include motor/shaft load and tire reaction checks, and mechanism gearing/limits.
-- [ ] Put all tolerances and test ranges in a documented versioned suite configuration;
+- [x] Include motor/shaft load and tire reaction checks, and mechanism gearing/limits.
+- [x] Put all tolerances and test ranges in a documented versioned suite configuration;
   record them and per-case measurements in reports. Avoid claiming exhaustive parameter coverage.
-- [ ] Test rejected invalid configuration and deliberately violated bounds; run the matrix
-  and relevant regression tests, document evidence and ship item 2 in its own merged PR.
+- [x] Test rejected invalid configuration and deliberately violated bounds; run the matrix
+  and relevant regression tests, document evidence.
+- [ ] Ship item 2 in its own merged PR.
 
 Acceptance: the matrix tests actual production dynamics at multiple native timesteps and
 reports both individual bounds and cross-timestep comparisons. Failures identify the configuration.
@@ -68,7 +69,7 @@ test commands/results below. Preserve unrelated local files and private CAD.
 
 ### Item 1
 
-Implementation verified. Shipping pending.
+Shipped: [PR #22](https://github.com/AtomicTrxn/ftc-forge/pull/22), merge `f71a918`.
 
 - `./gradlew :gui-runner:validateSimulator`: **12/12 native scenarios pass**.
 - Affected demo/review/contact tests and the suite: **36 distinct Java cases pass**
@@ -87,7 +88,24 @@ Implementation verified. Shipping pending.
 
 ### Item 2
 
-Pending.
+Implementation verified. Shipping pending.
+
+- `./gradlew test :gui-runner:validateSimulator --args='--matrix'`: **174/174 scenarios
+  and all 180 Java cases pass** (GUI 132, physics 41, SDK 7; no skips/errors/failures).
+- Matrix: 108 native drive combinations, 36 timestep comparisons, three signed mechanism
+  reductions (1, -5, 10), 12 native tire cases and three shaft-load/current comparisons,
+  plus item 1's 12 scenarios. Configuration and every tolerance travel with the report.
+- Negative coverage rejects invalid/oversized ranges, unknown fields, duplicate values,
+  missing convergence samples and excessive timestep spread.
+- The first matrix run found stale native support after teleporting a settled robot up.
+  Bullet retained its prior manifold until collision detection. The support check now
+  reprojects local contact points through current body transforms before accepting support.
+  A direct regression asserts zero support and zero drive acceleration immediately after
+  the teleport; airborne tires also pass at 30/120/480 Hz. No settling delay hides the bug.
+- Instrumentation records actual applied drive impulse and contact/shaft momentum reaction;
+  it does not change the commanded solver dynamics. Existing tire/contact/mechanism tests pass.
+- Generated reports remain under `build/simulator-validation/`; these are synthetic
+  consistency/sensitivity results, not real-world calibration or exhaustive coverage.
 
 ### Item 3
 

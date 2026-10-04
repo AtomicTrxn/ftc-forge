@@ -11,7 +11,7 @@ final class SyntheticRobots {
     record Dimensions(double massKg,double radiusM,double trackM,double mechanismReduction) {
         static Dimensions standard(){return new Dimensions(3,.045,.26,1);}
         Dimensions {
-            for(double v:new double[]{massKg,radiusM,trackM,mechanismReduction})
+            for(double v:new double[]{massKg,radiusM,trackM,Math.abs(mechanismReduction)})
                 if(!Double.isFinite(v)||v<=0)throw new IllegalArgumentException("Synthetic dimensions must be finite and positive");
             if(radiusM<=.031||trackM<=.22)throw new IllegalArgumentException("Synthetic wheels must clear the chassis");
         }

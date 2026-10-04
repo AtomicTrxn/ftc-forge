@@ -78,6 +78,9 @@ public class PhysicsWorld {
     private float driveYawInertia;
     private double driveResponseTimeS = .10, driveMaxAccelMps2 = 7.8;
     private double yawResponseTimeS = .10, driveMaxYawAccelRadps2 = 20;
+    record DriveImpulse(double xNs,double zNs,double yawNms,double availableNs,double availableNms,double normalNs,float dt) { }
+    private DriveImpulse driveImpulse=new DriveImpulse(0,0,0,0,0,0,0);
+    DriveImpulse driveImpulse(){return driveImpulse;}
 
 
     public PhysicsWorld(AssetManager assetManager, Node rootNode, BulletAppState bulletAppState) {
@@ -210,6 +213,7 @@ public class PhysicsWorld {
     }
 
     private void applyDriveImpulse(float dt) {
+        driveImpulse=new DriveImpulse(0,0,0,0,0,0,dt);
         if (!driveControllerEnabled || dt <= 0 || !chassisControl.isDynamic()) return;
         var support=driveContacts==null?null:driveContacts.refresh();
         if (tireDrive != null) { tireDrive.tick(dt); return; }
@@ -244,6 +248,7 @@ public class PhysicsWorld {
         }
         chassisControl.applyCentralImpulse(impulse);
         chassisControl.applyTorqueImpulse(new Vector3f(0, moment, 0));
+        driveImpulse=new DriveImpulse(impulse.x,impulse.z,moment,support==null?0:support.frictionImpulse(),support==null?0:support.momentImpulse(),support==null?0:support.normalImpulse(),dt);
     }
 
     private static double gripScale(Vector3f impulse,float moment,double available,double availableMoment) {
