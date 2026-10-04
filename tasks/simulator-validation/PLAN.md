@@ -39,24 +39,25 @@ CAD; a deliberately broken expectation fails, without suppressing the other scen
   record them and per-case measurements in reports. Avoid claiming exhaustive parameter coverage.
 - [x] Test rejected invalid configuration and deliberately violated bounds; run the matrix
   and relevant regression tests, document evidence.
-- [ ] Ship item 2 in its own merged PR.
+- [x] Ship item 2 in its own merged PR.
 
 Acceptance: the matrix tests actual production dynamics at multiple native timesteps and
 reports both individual bounds and cross-timestep comparisons. Failures identify the configuration.
 
 ## 3. Live physics diagnostics
 
-- [ ] Provide one read-only snapshot for native contacts/normals, wheel support/load/grip,
+- [x] Provide one read-only snapshot for native contacts/normals, wheel support/load/grip,
   tire slip/force, motor effort/current and mechanism position/limits.
-- [ ] Add a toggleable overlay and concise diagnostics panel in both the simulator and the
+- [x] Add a toggleable overlay and concise diagnostics panel in both the simulator and the
   import-time motion demo. Reuse the existing collision-shape toggle.
-- [ ] Explain missing support, belly scraping, no grip and blocked/no-motion conditions;
+- [x] Explain missing support, belly scraping, no grip and blocked/no-motion conditions;
   distinguish observed facts from possible causes. Mark unavailable tire data as unavailable.
-- [ ] Display SI units and a vector legend/scaling; bound and throttle rendering work.
+- [x] Display SI units and a vector legend/scaling; bound and throttle rendering work.
   Hide all diagnostics when toggled off and clean up on demo replay/close.
-- [ ] Test live snapshots and overlay behavior with synthetic native scenes, including
+- [x] Test live snapshots and overlay behavior with synthetic native scenes, including
   unsupported, slippery and blocked cases; verify diagnostics do not change physics.
-- [ ] Document controls and evidence, run regression checks, and ship item 3 in its own merged PR.
+- [x] Document controls and evidence and run regression checks.
+- [ ] Ship item 3 in its own merged PR.
 
 Acceptance: a user can see what contacts support the robot and inspect drive/mechanism effort
 while it moves; toggling diagnostics has no effect on the physics result.
@@ -88,7 +89,7 @@ Shipped: [PR #22](https://github.com/AtomicTrxn/ftc-forge/pull/22), merge `f71a9
 
 ### Item 2
 
-Implementation verified. Shipping pending.
+Shipped: [PR #23](https://github.com/AtomicTrxn/ftc-forge/pull/23), merge `ef5b903`.
 
 - `./gradlew test :gui-runner:validateSimulator --args='--matrix'`: **174/174 scenarios
   and all 180 Java cases pass** (GUI 132, physics 41, SDK 7; no skips/errors/failures).
@@ -109,7 +110,33 @@ Implementation verified. Shipping pending.
 
 ### Item 3
 
-Pending.
+Implementation and verification complete; shipment pending.
+
+- `./gradlew test :gui-runner:validateSimulator --args='--matrix'`: **174/174 native
+  scenarios and all 190 Java cases pass** (GUI 142, physics 41, SDK 7; no skips/errors/failures).
+  Final report: `build/simulator-validation/run-03bce8c5-d694-45a5-8900-cd94d57cf0c3/report.md`.
+- Ten diagnostics tests cover native load/normals, unavailable aggregate tire data,
+  zero grip versus airborne versus belly support, loaded wall blocking, spinning tires,
+  blocked slide effort/limits, hidden/throttled pooled rendering, snapshot immutability,
+  shared D/P input events and replay, sampling limits/missing bindings, and the headless
+  report/export path. Full native demo outcomes remain equal with polling/overlay on or off;
+  immediate capture leaves native pose, shaft angle and body count unchanged.
+- Actual OpenGL frame captures inspected at 1280 x 800 for the mechanism demo, individual
+  tire demo and generic field simulator. Labels, SI units, unavailable support, limits,
+  contact/load vectors and panel layout render correctly. Captures retained in
+  `build/desktop-diagnostics/{demo,tires,field}.png`; capture processes close automatically.
+- Desktop automation still timed out attaching to the GLFW renderer after the user confirmed
+  the Mac was unlocked. OS-level keyboard automation was not performed. Shared D/P bindings
+  were verified through jME InputManager events, including export and a replaced replay overlay;
+  rendered images came from the actual renderer's frame capture, not fabricated screenshots.
+- Initial native diagnostic testing found a static-body velocity getter assertion in the
+  blocked-slide fixture. Static chassis velocities now read as zero; dynamic bodies retain
+  their native values. No motion equations were changed. Joint telemetry is cached in the
+  production tick, without renderer angle unwrapping; native motor effort limits are labeled
+  as limits rather than actual solved constraint forces.
+- Diagnostics run at most 10 Hz, poll nothing while hidden, cap sampled contacts/devices,
+  reuse arrows and clean up on replay/close. P creates a separate JSON file; prepared model,
+  collision review and calibration are unchanged. See `gui-runner/PHYSICS_DIAGNOSTICS.md`.
 
 ## Limits and follow-ups
 

@@ -27,6 +27,9 @@ With a selected project, the demo uses its hardware XML and motor presets, while
 - **R**: rebuild from current settings and replay.
 - **Esc**: close; unfinished runs record stopped status.
 - **C**: toggle native collision outlines.
+- **D**: toggle [physics diagnostics](PHYSICS_DIAGNOSTICS.md), including contact/load vectors,
+  wheel support/grip/slip, motor effort and mechanism positions/limits.
+- **P**: save a read-only diagnostic JSON snapshot in `build/physics-diagnostics/`.
 - **V**: toggle CAD visibility. Drag to orbit; scroll to zoom.
 
 The window shows the active action and recent outcomes. Results contain actual forward/left displacement in meters, turn in degrees, or joint start/end/target in meters or radians. **No clear movement**, **unexpected direction** and **needs attention** include instructions to inspect bindings, axes, signs, gearing, limits, collisions and motor effort. Observed movement still needs your comparison with the actual robot.
@@ -66,3 +69,7 @@ Raw reports live under the setup library's `sessions/motion-demos/` and are not 
 ```
 
 The profile must have current prepared artifacts and no unresolved CAD migration choices. Report paths must be outside the model directory. See [demo evidence](../tasks/robot-motion-demo/RESULTS.md) and [guided review/correction evidence](../tasks/motion-review/RESULTS.md).
+
+Add `--diagnostics` to show the live panel initially, or to include final diagnostics in a
+headless report. `--screenshot /absolute/output/demo.png` captures a rendered view after
+motion starts and closes with an intentionally incomplete demo report.
