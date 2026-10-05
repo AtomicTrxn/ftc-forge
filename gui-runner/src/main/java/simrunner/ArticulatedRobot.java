@@ -44,13 +44,14 @@ final class ArticulatedRobot implements PhysicsTickListener {
         addAttachedInertia(axis.child.part().name(),moment);
     }
     private final List<Axis> axes = new ArrayList<>();
-    record DiagnosticJoint(String name,String body,String type,double position,double velocity,double effort,boolean effortIsLimit,Double lower,Double upper,Vector3f pivot,Vector3f axis) { }
+    private final Map<String,List<Axis>> wheelShafts=new LinkedHashMap<>();
+    record DiagnosticJoint(String name,String body,String type,double position,double velocity,double effort,boolean effortIsLimit,boolean effortIsEstimate,Double lower,Double upper,Vector3f pivot,Vector3f axis) { }
     Map<Long,String> diagnosticBodies() {
         var names=new LinkedHashMap<Long,String>();bodies.forEach((name,body)->names.put(body.control().nativeId(),name));return Map.copyOf(names);
     }
     List<DiagnosticJoint> diagnosticJoints() {
         // Read cached last-tick values. Do not sample/unroll joint position from a renderer.
-        return axes.stream().limit(32).map(a->new DiagnosticJoint(a.joint.name(),a.child.part().name(),a.joint.type(),a.position,a.lastVelocity,a.lastEffort,a.effortIsLimit,a.joint.lower(),a.joint.upper(),
+        return axes.stream().limit(32).map(a->new DiagnosticJoint(a.joint.name(),a.child.part().name(),a.joint.type(),a.position,a.lastVelocity,a.lastEffort,a.effortIsLimit,a.suspension,a.joint.lower(),a.joint.upper(),
             a.parent.control().getPhysicsLocation().add(a.parent.control().getPhysicsRotation().mult(a.pivotParent)),a.parent.control().getPhysicsRotation().mult(a.axisParent))).toList();
     }
     int diagnosticJointCount(){return axes.size();}
@@ -67,6 +68,7 @@ final class ArticulatedRobot implements PhysicsTickListener {
     ArticulatedRobot(ImportedRobotScene scene, PhysicsWorld world, Node field, Vector3f start,
                      Map<String, ServoModel.Spec> servoSpecs, Quaternion placement) throws Exception {
         this.scene = scene;
+        if(scene.rotatingWheels!=null&&(scene.tireContacts||scene.wheelContactsEnabled()))throw new IllegalArgumentException("Rotating native wheels cannot share tire/aggregate contact ownership");
         this.servoSpecs = servoSpecs;
         for (RobotUrdf.Transmission tx : scene.passiveConstruction ? List.<RobotUrdf.Transmission>of() : scene.urdf.transmissions.values()) {
             if (scene.isDriveWheel(scene.urdf.joints.get(tx.joint()))) continue;
@@ -134,7 +136,7 @@ final class ArticulatedRobot implements PhysicsTickListener {
         if(scene.wheelContactsEnabled())world.installDriveContacts(new DriveContacts(world,scene.driveContacts,chassis.part().contactLinks(),scene.wheelJoints));
         java.util.Set<String> usedMotors = new java.util.HashSet<>();
         for (RobotUrdf.Joint joint : scene.urdf.joints.values()) {
-            if (joint.type().equals("fixed") || scene.wheelLinks.contains(joint.child())) continue;
+            if (joint.type().equals("fixed") || scene.wheelLinks.contains(joint.child())&&scene.rotatingWheels==null) continue;
             Body parent = bodies.get(scene.owners.get(joint.parent()));
             Body child = bodies.get(scene.owners.get(joint.child()));
             // Adjacent bodies share a joint and often have deliberately overlapping CAD geometry.
@@ -147,14 +149,34 @@ final class ArticulatedRobot implements PhysicsTickListener {
                 for (RobotUrdf.Actuator actuator : tx.actuators()) {
                     SimDcMotorEx motor = scene.hardwareMap.tryGet(SimDcMotorEx.class, actuator.name());
                     if (motor != null) {
-                        if (!usedMotors.add(actuator.name())) throw new IllegalArgumentException("Motor drives multiple physical joints: " + actuator.name());
+                        if(axis.rotatingWheel) {
+                            if(!joint.type().equals("continuous")||Math.abs(actuator.mechanicalReduction())!=1||axis.actuators.size()!=1)
+                                throw new IllegalArgumentException("Rotating wheels need one 1:1 actuator per continuous wheel joint");
+                            wheelShafts.computeIfAbsent(actuator.name(),n->new ArrayList<>()).add(axis);
+                        } else if (!usedMotors.add(actuator.name())) throw new IllegalArgumentException("Motor drives multiple physical joints: " + actuator.name());
                         motor.useExternalShaft();
                     } else if (!servoSpecs.containsKey(actuator.name())) {
                         throw new IllegalArgumentException("Missing servoPhysics entry for URDF actuator " + actuator.name());
                     }
                 }
             }
+            if(axis.suspension&&!axis.actuators.isEmpty())throw new IllegalArgumentException("Native suspension spring must be passive: "+joint.name());
             axes.add(axis);
+        }
+        for(var entry:wheelShafts.entrySet()) {
+            if(usedMotors.contains(entry.getKey()))throw new IllegalArgumentException("Drive motor also binds a mechanism: "+entry.getKey());
+            var group=entry.getValue();var source=group.get(0);
+            double reflected=scene.rotatingWheels.reflectedMotorInertiaKgM2()/group.size();
+            for(var wheel:group) {
+                Vector3f local=wheel.axisChild,inverse=wheel.child.control().getInverseInertiaLocal(null);
+                if(Math.max(Math.abs(local.x),Math.max(Math.abs(local.y),Math.abs(local.z)))<.999f)throw new IllegalArgumentException("Rotating wheel inertia requires a principal-axis-aligned axle");
+                wheel.child.control().setInverseInertiaLocal(new Vector3f((float)(1/(1/inverse.x+reflected*local.x*local.x)),(float)(1/(1/inverse.y+reflected*local.y*local.y)),(float)(1/(1/inverse.z+reflected*local.z*local.z))));
+                if(wheel!=source) {
+                    double ratio=-wheel.actuators.get(0).mechanicalReduction()/source.actuators.get(0).mechanicalReduction();
+                    world.space().add(new com.jme3.bullet.joints.GearJoint(source.child.control(),wheel.child.control(),source.axisChild,wheel.axisChild,(float)ratio));
+                    source.child.control().addToIgnoreList(wheel.child.control());
+                }
+            }
         }
         for (Axis follower : axes) {
             if (follower.joint.mimic() == null) continue;
@@ -194,9 +216,14 @@ final class ArticulatedRobot implements PhysicsTickListener {
         boolean effortIsLimit;
         New6Dof hinge;
         float motorAngleSign=1;
+        final boolean rotatingWheel;
+        final boolean suspension;
 
         Axis(RobotUrdf.Joint joint, Body parent, Body child, Vector3f pivot, Quaternion rotation, PhysicsSpace space) {
             this.joint = joint;
+            rotatingWheel=scene.rotatingWheels!=null&&scene.isDriveWheel(joint);
+            suspension=scene.rotatingWheels!=null&&joint.type().equals("prismatic")&&scene.passiveJoints.containsKey(joint.name())
+                &&FieldPackage.num(FieldPackage.map(scene.passiveJoints.get(joint.name())),"joint_spring_n_per_m")>0;
             this.parent = parent;
             this.child = child;
             Quaternion inverseParent = parent.control().getPhysicsRotation().inverse();
@@ -207,7 +234,15 @@ final class ArticulatedRobot implements PhysicsTickListener {
             axisParent = inverseParent.mult(worldAxis);
             axisChild = inverseChild.mult(worldAxis);
             initialRelative = inverseParent.mult(child.control().getPhysicsRotation());
-            if (joint.type().equals("prismatic")) {
+            if(suspension) {
+                var frameWorld=new Quaternion().fromRotationMatrix(frameForX(worldAxis));
+                hinge=new New6Dof(parent.control(),child.control(),pivotParent,pivotChild,inverseParent.mult(frameWorld).toRotationMatrix(),inverseChild.mult(frameWorld).toRotationMatrix(),RotationOrder.XYZ);
+                for(int dof=0;dof<6;dof++){hinge.set(MotorParam.LowerLimit,dof,dof==0?joint.lower().floatValue():0);hinge.set(MotorParam.UpperLimit,dof,dof==0?joint.upper().floatValue():0);}
+                var passive=FieldPackage.map(scene.passiveJoints.get(joint.name()));hinge.enableSpring(0,true);
+                hinge.setStiffness(0,(float)FieldPackage.num(passive,"joint_spring_n_per_m"),true);
+                hinge.setDamping(0,(float)FieldPackage.num(passive,"joint_damping_ns_per_m"),true);
+                hinge.setEquilibriumPoint(0,(float)FieldPackage.num(passive,"joint_rest_m"));space.add(hinge);
+            } else if (joint.type().equals("prismatic")) {
                 Quaternion frameWorld = new Quaternion().fromRotationMatrix(frameForX(worldAxis));
                 SliderJoint slider = new SliderJoint(parent.control(), child.control(), pivotParent, pivotChild,
                     inverseParent.mult(frameWorld).toRotationMatrix(), inverseChild.mult(frameWorld).toRotationMatrix(), true);
@@ -279,14 +314,16 @@ final class ArticulatedRobot implements PhysicsTickListener {
             var passive=scene.passiveJoints.containsKey(joint.name())?FieldPackage.map(scene.passiveJoints.get(joint.name())):null;
             boolean linear=joint.type().equals("prismatic");
             double effort = passive==null?0:-FieldPackage.num(passive,linear?"joint_spring_n_per_m":"joint_spring_nm_per_rad")*(q-FieldPackage.num(passive,linear?"joint_rest_m":"joint_rest_rad"))-FieldPackage.num(passive,linear?"joint_damping_ns_per_m":"joint_damping_nm_s")*velocity;
+            if(suspension){if(!actuators.isEmpty())throw new IllegalArgumentException("Native suspension spring must be passive: "+joint.name());lastEffort=effort;effortIsLimit=false;return;}
             double damping = 0;
             for (RobotUrdf.Actuator actuator : actuators) {
                 SimDcMotorEx motor = scene.hardwareMap.tryGet(SimDcMotorEx.class, actuator.name());
                 double reduction = actuator.mechanicalReduction();
                 if (motor != null) {
-                    motor.syncExternalShaft(q * reduction, velocity * reduction);
-                    effort += (motor.externalShaftTorque() - shaftLoads.getOrDefault(actuator.name(),0d)) * reduction;
-                    damping += motor.externalTorqueDamping() * reduction * reduction;
+                    if(!rotatingWheel)motor.syncExternalShaft(q * reduction, velocity * reduction);
+                    double share=rotatingWheel?wheelShafts.get(actuator.name()).size():1;
+                    effort += (motor.externalShaftTorque() - shaftLoads.getOrDefault(actuator.name(),0d)) * reduction/share;
+                    damping += motor.externalTorqueDamping() * reduction * reduction/share;
                 } else {
                     Servo servo = scene.hardwareMap.get(Servo.class, actuator.name());
                     ServoModel.Spec spec = servoSpecs.get(actuator.name());
@@ -313,7 +350,7 @@ final class ArticulatedRobot implements PhysicsTickListener {
             effort /= 1 + dt * damping * inverseEffective;
             boolean elasticAxis = hinge != null && scene.flexibleIntake != null &&
                 (attachedInertia.containsKey(child.part().name()) || axes.stream().anyMatch(a -> joint.name().equals(a.joint.mimic()) && attachedInertia.containsKey(a.child.part().name())));
-            if (elasticAxis && !actuators.isEmpty()) {
+            if ((elasticAxis||rotatingWheel) && !actuators.isEmpty()) {
                 // Solve motor effort together with flap/contact constraints. Applying a torque
                 // impulse to the tiny rigid core before solving contacts required an artificial
                 // acceleration cap. The native motor instead bounds torque in the solve.
@@ -388,7 +425,15 @@ final class ArticulatedRobot implements PhysicsTickListener {
     }
 
     @Override public void prePhysicsTick(PhysicsSpace space, float dt) {
+        syncWheelShafts();
         for (Axis axis : axes) axis.drive(dt);
     }
-    @Override public void physicsTick(PhysicsSpace space, float dt) { }
+    private void syncWheelShafts() {
+        for(var entry:wheelShafts.entrySet()) {
+            double position=0,rate=0;
+            for(var wheel:entry.getValue()){double reduction=wheel.actuators.get(0).mechanicalReduction();position+=wheel.samplePosition()*reduction;rate+=wheel.rate(wheel.parent.control().getPhysicsRotation().mult(wheel.axisParent))*reduction;}
+            scene.hardwareMap.get(SimDcMotorEx.class,entry.getKey()).syncExternalShaft(position/entry.getValue().size(),rate/entry.getValue().size());
+        }
+    }
+    @Override public void physicsTick(PhysicsSpace space, float dt) {syncWheelShafts();}
 }

@@ -25,10 +25,13 @@ public class SimConfig {
     public String calibration;
     ModelProfile robotProfile;
     public Map<String,Object> scenePieces=Map.of();
+    List<SceneSensorConfig> sensors=List.of();
+    Map<String,Object> fieldBehavior=Map.of();
     public DifferentialDriveConfig drive;
     DriveGeometry driveGeometry;
     public MotorIntakeConfig intake;
     public TireDriveConfig tires;
+    RotatingWheelConfig rotatingWheels;
     DriveContactConfig driveContacts;
     public FlexibleIntakeConfig flexibleIntake;
     public TorusRetentionConfig torusRetention;
@@ -69,6 +72,8 @@ public class SimConfig {
         SimConfig config = new SimConfig();
         config.robotProfile=model;
         if(root.containsKey("scene_pieces"))config.scenePieces=FieldPackage.map(root.get("scene_pieces"));
+        if(root.containsKey("sensors"))config.sensors=SceneSensorConfig.parse(root.get("sensors"));
+        if(root.containsKey("field_behavior")){config.fieldBehavior=FieldPackage.map(root.get("field_behavior"));FieldBehavior.validate(config.fieldBehavior);if(FieldPackage.num(config.fieldBehavior,"schema_version")!=1)throw new IllegalArgumentException("Unsupported field behavior schema");}
         if (root.containsKey("sourceRoot")) config.sourceRoot = (String) root.get("sourceRoot");
         if (root.containsKey("robotConfig")) config.robotConfig = (String) root.get("robotConfig");
         if (root.containsKey("presetMotors")) config.presetMotors = (String) root.get("presetMotors");
@@ -123,6 +128,11 @@ public class SimConfig {
         if (root.containsKey("tires")) {
             config.tires = TireDriveConfig.parse((Map<String, Object>) root.get("tires"));
             if (config.drive == null || config.urdf == null) throw new IllegalArgumentException("tires requires differential drive and URDF");
+        }
+        if(root.containsKey("rotating_wheels")) {
+            config.rotatingWheels=RotatingWheelConfig.parse(FieldPackage.map(root.get("rotating_wheels")));
+            if(config.drive==null||config.urdf==null||config.tires!=null||config.driveContacts!=null&&config.driveContacts.enabled())
+                throw new IllegalArgumentException("rotating_wheels requires URDF and differential drive, without tires or enabled drive_contacts; native contacts own traction");
         }
         if (root.containsKey("intake")) config.intake = MotorIntakeConfig.parse((Map<String, Object>) root.get("intake"));
         if (root.containsKey("flexible_intake")) {

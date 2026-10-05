@@ -24,6 +24,13 @@ class SimIMUTest {
         assertEquals(10_000_000L, imu.getRobotYawPitchRollAngles().getAcquisitionTime());
     }
 
+    @Test void fullPoseAndBodyRatesRetainLatencyUnitsAndYawOnlyReset() {
+        var imu=new SimIMU("imu");imu.setLatencyMs(10);imu.update(.4,-.2,.3,1,2,3,0);imu.update(.8,-.5,.7,4,5,6,10);
+        var pose=imu.getRobotYawPitchRollAngles();assertEquals(-.2,pose.getPitch(AngleUnit.RADIANS),1e-9);assertEquals(.3,pose.getRoll(AngleUnit.RADIANS),1e-9);
+        var rate=imu.getRobotAngularVelocity(AngleUnit.RADIANS);assertEquals(1,rate.xRotationRate,1e-6);assertEquals(2,rate.yRotationRate,1e-6);assertEquals(3,rate.zRotationRate,1e-6);
+        assertEquals(180/Math.PI,imu.getRobotAngularVelocity(AngleUnit.DEGREES).xRotationRate,1e-4);imu.resetYaw();assertEquals(0,imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS),1e-9);assertEquals(.3,imu.getRobotYawPitchRollAngles().getRoll(AngleUnit.RADIANS),1e-9);
+    }
+
     @Test void resetYawWrapsAtHalfTurn() {
         SimIMU imu = new SimIMU("imu");
         imu.setLatencyMs(0);

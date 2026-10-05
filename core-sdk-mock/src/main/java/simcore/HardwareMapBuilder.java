@@ -53,6 +53,9 @@ public class HardwareMapBuilder {
                 case TOUCH_SENSOR:
                     map.register(entry.name, new SimTouchSensor(entry.name));
                     break;
+                case CAMERA:
+                    map.register(entry.name, new org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName(entry.name));
+                    break;
                 case PINPOINT:
                     map.register(entry.name, new com.qualcomm.hardware.gobilda.GoBildaPinpointDriver(entry.name));
                     break;

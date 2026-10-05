@@ -91,6 +91,10 @@ public class SimulatorApp extends SimpleApplication {
     private Path collisionReport;
     private CollisionOverlay collisionOverlay;
     private PhysicsDiagnosticsOverlay diagnostics;
+    private SceneSensors sceneSensors;
+    private FieldBehavior fieldBehavior;
+    private com.jme3.font.BitmapText scoreStatus;
+    private com.jme3.font.BitmapText sensorStatus;
     private boolean showDiagnostics;
     private final double[] wheelRadii = {WHEEL_RADIUS_M, WHEEL_RADIUS_M, WHEEL_RADIUS_M, WHEEL_RADIUS_M};
 
@@ -146,6 +150,7 @@ public class SimulatorApp extends SimpleApplication {
                 Path fieldPath=projectDir.resolve(f.packagePath());
                 if(fieldPath.getFileName().toString().equals("profile.json")) {
                     var profile=new ModelProfile(fieldPath,true);if(!profile.kind.equals("field"))throw new IllegalArgumentException("Select a field profile");
+                    if(simConfig.fieldBehavior.isEmpty()&&profile.runtime.containsKey("field_behavior"))simConfig.fieldBehavior=FieldPackage.map(profile.runtime.get("field_behavior"));
                     if(profile.legacyField())fieldScene=new ImportedFieldScene(new FieldPackage(profile.artifact("field")),f,physicsWorld,rootNode,assetManager);
                     else modelFieldScene=new ModelFieldScene(profile,f.hasPieces(),physicsWorld,rootNode,assetManager,simConfig.scenePieces);
                 } else fieldScene=new ImportedFieldScene(new FieldPackage(fieldPath),f,physicsWorld,rootNode,assetManager);
@@ -169,10 +174,16 @@ public class SimulatorApp extends SimpleApplication {
             inputManager.addListener((ActionListener)(name,pressed,tpf)->{if(pressed){if(name.equals("CollisionOverlay"))collisionOverlay.setVisible(!collisionOverlay.visible);else {cadVisible=!cadVisible;setCadVisible(cadVisible);}}},"CollisionOverlay","CollisionCad");
             if(collisionOnly){cadVisible=false;setCadVisible(false);}
             timer.reset();
+            if(!simConfig.fieldBehavior.isEmpty()){fieldBehavior=new FieldBehavior(physicsWorld,simConfig.fieldBehavior,f.hasPieces());
+                scoreStatus=new com.jme3.font.BitmapText(guiFont);scoreStatus.setSize(13);scoreStatus.setLocalTranslation(15,35,0);guiNode.attachChild(scoreStatus);
+                inputManager.addMapping("MatchClock",new KeyTrigger(KeyInput.KEY_M));inputManager.addMapping("ScoreExport",new KeyTrigger(KeyInput.KEY_K));
+                inputManager.addListener((ActionListener)(name,pressed,tpf)->{if(pressed){if(name.equals("MatchClock"))fieldBehavior.toggle();else try{System.out.println("[SCORE] "+fieldBehavior.export(Path.of("build/field-behavior")));}catch(Exception e){System.err.println("[SCORE] Export failed: "+e.getMessage());}}},"MatchClock","ScoreExport");
+            }
             fieldStatus=new com.jme3.font.BitmapText(guiFont);fieldStatus.setText((modelFieldScene!=null?modelFieldScene.profile.name:fieldScene==null?"Generic field":fieldScene.field.name)+" | "+f.mode()+" | "+physicsWorld.gamePieces().size()+" pieces\nMeters at scale 1 | drag: orbit | scroll: zoom | R: reset field"+(previewOnly?" | preview":""));
             fieldStatus.setLocalTranslation(15,cam.getHeight()-15,0);guiNode.attachChild(fieldStatus);setDisplayStatView(false);
             fieldStatus.setText(fieldStatus.getText()+"\nC: collision shapes | V: CAD | D: physics diagnostics | P: save snapshot"+(collisionReview?" | coverage is not accuracy certification":""));
-            inputManager.addMapping("ResetField",new KeyTrigger(KeyInput.KEY_R));inputManager.addListener((ActionListener)(name,pressed,tpf)->{if(pressed){if(fieldScene!=null)fieldScene.reset();else if(modelFieldScene!=null){modelFieldScene.reset();physicsWorld.resetPieces();}else physicsWorld.resetPieces();}},"ResetField");
+            sensorStatus=new com.jme3.font.BitmapText(guiFont);sensorStatus.setSize(13);sensorStatus.setBox(new com.jme3.font.Rectangle(0,0,cam.getWidth()-520,105));sensorStatus.setLocalTranslation(15,125,0);guiNode.attachChild(sensorStatus);
+            inputManager.addMapping("ResetField",new KeyTrigger(KeyInput.KEY_R));inputManager.addListener((ActionListener)(name,pressed,tpf)->{if(pressed){if(fieldBehavior!=null)fieldBehavior.reset();if(fieldScene!=null)fieldScene.reset();else if(modelFieldScene!=null){modelFieldScene.reset();physicsWorld.resetPieces();}else physicsWorld.resetPieces();}},"ResetField");
             if (screenshotPath != null) {
                 java.nio.file.Files.createDirectories(screenshotPath.getParent());
                 String name = screenshotPath.getFileName().toString();
@@ -328,6 +339,8 @@ public class SimulatorApp extends SimpleApplication {
             if(simConfig.robotProfile!=null)simConfig.robotProfile.configure(importedScene);
             importedScene.tireContacts = simConfig.tires != null;
             importedScene.driveContacts=simConfig.driveContacts;
+            importedScene.rotatingWheels=simConfig.rotatingWheels;
+            if(simConfig.rotatingWheels!=null)physicsWorld.driveControllerEnabled=false;
             importedScene.flexibleIntake = simConfig.flexibleIntake;
             importedScene.collisionOmissions=simConfig.collisionOmissions;
             var collisionAudit=CollisionAudit.inspect(importedScene);
@@ -349,6 +362,7 @@ public class SimulatorApp extends SimpleApplication {
                 physicsWorld.space().setAccuracy(1f / 480);
                 physicsWorld.space().setMaxSubSteps(64);
             }
+            if(simConfig.rotatingWheels!=null||simConfig.tires!=null){physicsWorld.space().setAccuracy(1f/480);physicsWorld.space().setMaxSubSteps(64);}
             System.out.println("[IMPORT] Physics chassis from " + urdf.name + ", mass=" + urdf.totalMassKg() + "kg");
             if (differential == null) {
                 var dimensions=DriveGeometry.resolve(urdf,simConfig.driveGeometry);
@@ -388,6 +402,7 @@ public class SimulatorApp extends SimpleApplication {
         validateInitialContacts();
 
         Telemetry telemetry = new ConsoleTelemetry();
+        sceneSensors=new SceneSensors(physicsWorld,articulated,hardwareMap,simConfig.sensors,simConfig.fieldBehavior);
         if(!previewOnly)opModeSession = Executor.start(target, hardwareMap, telemetry, gamepad1, gamepad2);
         System.out.println(previewOnly?"[SIM] Physical preview of "+target.displayName+" | TeamCode not started":"[SIM] Running " + target.displayName + " in the jME renderer...");
     }
@@ -396,6 +411,8 @@ public class SimulatorApp extends SimpleApplication {
     public void simpleUpdate(float tpf) {
         if(collisionOverlay!=null)collisionOverlay.update();
         if(diagnostics!=null)diagnostics.update(tpf,cam.getWidth(),cam.getHeight());
+        if(scoreStatus!=null)scoreStatus.setText(fieldBehavior.status());
+        if(sensorStatus!=null&&sceneSensors!=null)sensorStatus.setText(String.join("\n",sceneSensors.summaries().stream().limit(5).toList()));
         if(hardwareMap!=null){renderSeconds+=tpf;renderFrames++;if(renderFrames>5){maxRuntimeFrameMs=Math.max(maxRuntimeFrameMs,tpf*1000);if(tpf>physicsWorld.space().getAccuracy()*physicsWorld.space().maxSubSteps())physicsOverBudgetFrames++;}if(renderSeconds-lastPerfReport>=2){lastPerfReport=renderSeconds;System.out.printf(java.util.Locale.ROOT,"[PERF] mean FPS=%.1f bodies=%d pieces=%d%n",renderFrames/renderSeconds,physicsWorld.space().countRigidBodies(),physicsWorld.gamePieces().size());}}
         if(previewOnly && screenshot!=null && ++previewFrames==30){screenshot.takeScreenshot();finishingFrames=10;}
         if (finishingFrames > 0) {
@@ -446,7 +463,7 @@ public class SimulatorApp extends SimpleApplication {
         double yawRad = Math.atan2(-heading.z, heading.x);
         double yawRateRadS = physicsWorld.getChassisAngularVelocity().y;
         for (IMU imu : hardwareMap.getAll(IMU.class)) {
-            ((SimIMU) imu).update(yawRad, yawRateRadS, Math.round(simTimeMs));
+            RobotOrientation.update((SimIMU)imu,physicsWorld.getChassisRotation(),physicsWorld.getChassisAngularVelocity(),Math.round(simTimeMs));
         }
         // Odometry computers (Pinpoint/OTOS): field x forward, y left (jME z is the opposite of y).
         Vector3f chassisVelocity = physicsWorld.chassisBody().getLinearVelocity();
@@ -529,5 +546,5 @@ public class SimulatorApp extends SimpleApplication {
         }
         return motor.getPower() * kinematics.maxWheelSpeedMetersPerSecond; // fallback, shouldn't hit in this simulator
     }
-    @Override public void destroy(){if(diagnostics!=null)diagnostics.dispose();super.destroy();}
+    @Override public void destroy(){if(fieldBehavior!=null)fieldBehavior.close();if(sceneSensors!=null)sceneSensors.close();if(diagnostics!=null)diagnostics.dispose();super.destroy();}
 }

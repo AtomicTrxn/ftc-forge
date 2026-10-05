@@ -37,6 +37,7 @@ final class ModelProfile {
         return HexFormat.of().formatHex(h.digest());
     }
     void configure(ImportedRobotScene scene) {
+        if(runtime.containsKey("rotating_wheels"))scene.rotatingWheels=RotatingWheelConfig.parse(FieldPackage.map(runtime.get("rotating_wheels")));
         if(runtime.containsKey("drive_contacts"))scene.driveContacts=DriveContactConfig.parse(FieldPackage.map(runtime.get("drive_contacts")));
         scene.collisionMarginM=(float)FieldPackage.num(parameters,"collision_margin_m");
         scene.modelMaterials=FieldPackage.map(runtime.get("model_materials"));

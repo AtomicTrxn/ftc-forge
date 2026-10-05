@@ -1,7 +1,9 @@
 package org.firstinspires.ftc.vision.apriltag;
 
-/** No-op stub. Vision is deferred (R1) -- this class exists purely so team code compiles. */
+/** Simulated geometric observation; no image detector confidence is implied. */
 public class AprilTagDetection {
     public int id;
-    public String metadata;
+    public AprilTagMetadata metadata;
+    public AprilTagPoseFtc ftcPose;
+    public long frameAcquisitionNanoTime;
 }

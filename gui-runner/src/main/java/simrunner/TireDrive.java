@@ -3,6 +3,7 @@ package simrunner;
 import com.jme3.math.Vector3f;
 import com.jme3.bullet.objects.PhysicsRigidBody;
 import physics.TireFriction;
+import physics.TireResponse;
 import simcore.SimDcMotorEx;
 import simcore.RobotUrdf;
 import com.qualcomm.robotcore.hardware.HardwareMap;
@@ -20,6 +21,7 @@ final class TireDrive {
     private final Map<String,Side> sides=new LinkedHashMap<>();
     private final List<State> states=new ArrayList<>();
     private final List<Reaction> reactions=new ArrayList<>();
+    private final Map<String,TireResponse> responses=new HashMap<>();
     private static final class Side {
         final SimDcMotorEx motor; final double sign, inertia;
         double omega, angle;
@@ -98,13 +100,14 @@ final class TireDrive {
             Vector3f velocity=body.getLinearVelocity().add(body.getAngularVelocity().cross(offset));
             double surface=side.omega*drive.wheelRadiusM();
             double slip=surface-velocity.dot(forward);
-            if(!supported[i]||!body.isDynamic()){states.add(new State(wheel.joint,false,surface,velocity.dot(forward),slip,0,false,0,0,0));continue;}
-            TireFriction.Spec spec=config.omniJoints().contains(wheel.joint)?config.omni():config.traction();
+            var response=responses.computeIfAbsent(wheel.joint,key->new TireResponse());
+            if(!supported[i]||!body.isDynamic()){response.reset();states.add(new State(wheel.joint,false,surface,velocity.dot(forward),slip,0,false,0,0,0));continue;}
+            boolean omni=config.omniJoints().contains(wheel.joint);TireFriction.Spec spec=omni?config.omni():config.traction();
             double rx=offset.cross(forward).y,ry=offset.cross(left).y;
             double invLong=1/world.driveMass()+rx*rx/world.driveYawInertia()+drive.wheelRadiusM()*drive.wheelRadiusM()/side.inertia;
             double invLat=1/world.driveMass()+ry*ry/world.driveYawInertia();
             double normal=world.driveContacts()==null?world.driveMass()*9.81/count:world.driveContacts().snapshot().wheels().stream().filter(w->w.joint().equals(wheel.joint)).mapToDouble(DriveContacts.Support::normalImpulse).sum()/dt;
-            var force=TireFriction.solve(spec,slip,velocity.dot(left),normal,dt,invLong,invLat);
+            var force=response.solve(spec,omni?config.omniResponse():config.tractionResponse(),slip,velocity.dot(left),normal,dt,invLong,invLat);
             double longitudinal=force.longitudinalN(),lateral=force.lateralN();boolean sliding=force.sliding();
             double gripLimit=spec.staticMu()*normal;
             if(world.driveContacts()!=null) {
@@ -112,6 +115,7 @@ final class TireDrive {
                 gripLimit=Math.min(gripLimit,grip);
                 double requested=Math.hypot(longitudinal,lateral);
                 if(requested>grip){double scale=grip/requested;longitudinal*=scale;lateral*=scale;sliding=true;}
+                if(grip==0)response.reset();
             }
             body.applyImpulse(forward.mult((float)(longitudinal*dt)).add(left.mult((float)(lateral*dt))),offset);
             side.omega-=longitudinal*drive.wheelRadiusM()*dt/side.inertia;

@@ -38,6 +38,7 @@ final class ImportedRobotScene {
     final RobotUrdf urdf;
     List<TireDrive.Wheel> driveWheels = List.of();
     boolean tireContacts;
+    RotatingWheelConfig rotatingWheels;
     boolean passiveConstruction, lockChassisLevel=true, contactCompliance;
     float collisionMarginM=.002f, contactStiffness=1e30f, contactDamping=.1f;
     Map<String,Object> modelMaterials=Map.of(), passiveJoints=Map.of();
@@ -126,6 +127,7 @@ final class ImportedRobotScene {
     void update() {
         for (RobotUrdf.Joint joint : urdf.joints.values()) {
             if (joint.type().equals("fixed") || !wheelLinks.contains(joint.child())) continue;
+            if(rotatingWheels!=null)continue; // Physical bodies already move their actual CAD/collision geometry.
             Node mount = jointNodes.get(joint.name());
             double value = urdf.transmissions.values().stream().filter(t -> t.joint().equals(joint.name()))
                 .flatMap(t -> t.actuators().stream()).mapToDouble(a ->
@@ -159,7 +161,7 @@ final class ImportedRobotScene {
         for (RobotUrdf.Joint joint : urdf.joints.values()) {
             if (!joint.parent().equals(link)) continue;
             boolean wheel = wheelBranch || isDriveWheel(joint);
-            boolean separate = !joint.type().equals("fixed") && !wheel;
+            boolean separate = !joint.type().equals("fixed") && (!wheel || rotatingWheels!=null);
             assignParts(joint.child(), separate ? joint.child() : owner, wheel);
         }
     }
@@ -175,6 +177,10 @@ final class ImportedRobotScene {
     /** Weld fixed subtrees and wheel mass once; native wheel geometry is explicit opt-in. */
     List<Part> parts() throws Exception {
         root.updateGeometricState();
+        if(rotatingWheels!=null) {
+            if(driveMotors.size()!=2)throw new IllegalArgumentException("Rotating wheels currently require two differential side motors");
+            for(String motor:driveMotors)if(urdf.transmissions.values().stream().filter(tx->isDriveWheel(urdf.joints.get(tx.joint()))).flatMap(tx->tx.actuators().stream()).noneMatch(a->a.name().equals(motor)))throw new IllegalArgumentException("No rotating wheel binding for drive motor: "+motor);
+        }
         if (tireContacts) driveWheels = TireDrive.layout(this);
         groupParts();
         CollisionAudit.inspect(this).requireUsable();
@@ -215,7 +221,7 @@ final class ImportedRobotScene {
             Quaternion principalInverse = principal.rotation().inverse();
             CompoundCollisionShape compound = new CompoundCollisionShape();var contactLinks=new LinkedHashMap<Integer,String>();
             for (RobotUrdf.Link link : urdf.links.values()) {
-                if (!owners.get(link.name()).equals(name) || wheelLinks.contains(link.name())&&!wheelContactsEnabled()) continue;
+                if (!owners.get(link.name()).equals(name) || wheelLinks.contains(link.name())&&!wheelContactsEnabled()&&rotatingWheels==null) continue;
                 Node node = linkNodes.get(link.name());
                 Quaternion relative = inverse.mult(node.getWorldRotation());
                 for (RobotUrdf.Collision collision : link.collisions()) {

@@ -9,7 +9,7 @@ added without being listed. This page explains the support levels and what is de
 | simulated | Behavior is wired to the simulator (motor/battery model, physics pose, IMU, hub voltage, OpMode lifecycle). |
 | state-only | Holds the commanded state; no physics effect yet (servos, CR servos). |
 | shim | API-compatible replacement that prints to the console instead of a web UI (FtcDashboard, `Canvas`, `TelemetryPacket`). |
-| inert | Accepts calls and returns constants (vision, distance/color/touch sensors, gamepad rumble). |
+| inert | Accepts calls and returns constants (unconfigured scene devices, gamepad rumble). |
 | support | Data and utility types (units, `Pose2D`, `ElapsedTime`, annotations). |
 
 ## Hardware worth knowing about
@@ -24,6 +24,16 @@ added without being listed. This page explains the support levels and what is de
   Their method lists were checked against the vendors' published drivers (see `gui-runner/COMPATIBILITY.md`).
 - A **vendored driver copy** (for example `GoBildaPinpointDriver.java` copied into `TeamCode`) extends raw I2C classes that
   are not simulated. Delete the copy and use the built-in class; the compiler explains this when it hits the import.
+
+- **Scene sensors** can bind configured poses/ranges/latency to native distance rays, color samples and
+  local pressure contacts. Unconfigured devices retain placeholders. XML supports distance/color/touch
+  entries under a hub and `<Webcam name="camera"/>` under `Robot`.
+- **VisionPortal / AprilTagProcessor** support configured geometric tags with range/frustum/occlusion,
+  pose units, timestamps and processor/stream lifecycle. They produce no camera images or image processing.
+  The simulated metadata/pose subset is listed in `sdk-surface.txt`; unused real SDK APIs are not implied.
+  See [setup and limitations](../gui-runner/ADVANCED_PHYSICS.md).
+- **IMU** can report native pitch/roll and all body angular rates. Axes follow the simulator URDF frame
+  (x forward/y left/z up); physical hub mounting parameters do not remap it yet.
 
 ## Not supported
 
