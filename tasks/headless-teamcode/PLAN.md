@@ -22,7 +22,7 @@ Requested October 5, 2026. Baseline: `0efab92`. Implement, verify and ship as wi
   values, wall blocking and mechanism encoders/stall, both OpMode styles, duration/stop,
   watchdog/exception isolation, repeated runs and no renderer dependency. Cover imported
   rotating wheels/suspension and scene/field settings. Keep prior executor/SDK checks green.
-- [ ] Run full Java/Python regression gates and native matrix. Document reproduction and
+- [x] Run full Java/Python regression gates and native matrix. Document reproduction and
   limitations; ship through a PR and record the tested head/merge in RESULTS.md.
 
 ## Decisions
@@ -48,4 +48,4 @@ Requested October 5, 2026. Baseline: `0efab92`. Implement, verify and ship as wi
   has its own 5 cm check. No production tire equations or tolerances changed for this issue.
 - Python: 50 tests passed. Documented CLI turn/reset ran without a renderer and exported evidence.
 - Full gate: 235 Java tests and 174 native scenarios passed; no skipped/error/failing cases.
-- PR delivery remains in progress.
+- Shipped in PR #26: tested head `599567d`, squash merge `8126b56`.

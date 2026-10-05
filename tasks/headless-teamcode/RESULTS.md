@@ -78,4 +78,10 @@ Future runtime construction changes must update both paths. No new private CAD i
 
 ## Delivery
 
-Pending tested-head PR and merge.
+- [PR #26](https://github.com/AtomicTrxn/ftc-forge/pull/26) merged October 5, 2026.
+- Tested implementation head: `599567d7da4980d15fe4becee95ad10da7abba39`.
+- Squash merge: `8126b56102d270797e5c173debf9e225c0cad5d0`.
+- Remote main baseline at merge was still `0efab92`; the merge used an exact-head guard.
+  GitHub supplied no additional CI checks; the local gates above are the verification evidence.
+- Local checkout returned to main; unrelated worktrees and untracked `.DS_Store` files were preserved.
+- This delivery record and the completed plan are a subsequent documentation-only main commit.
