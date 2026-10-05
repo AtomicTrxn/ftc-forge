@@ -97,4 +97,6 @@ Official layout source:
 
 ## Delivery
 
-Pending PR creation and merge of the tested implementation.
+[PR #25](https://github.com/AtomicTrxn/ftc-forge/pull/25) merged to `main` as
+`06e69f1` at 2026-10-05 00:50:50 UTC (October 4, 20:50:50 America/New_York).
+Tested feature head: `f45acfa10faa0672b97e7e4611d8fc69f564220d`.

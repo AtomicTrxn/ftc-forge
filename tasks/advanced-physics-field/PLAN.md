@@ -46,7 +46,7 @@ behavior (item 5). Ship verified stages; preserve reviewed legacy profiles and p
 
 - [x] Run affected native/unit/workflow tests and the existing validation matrix.
 - [x] Inspect actual renderer output for enabled features; record desktop limitations.
-- [ ] Ship tested work and record PRs, results and remaining evidence needs here.
+- [x] Ship tested work and record PRs, results and remaining evidence needs here.
 
 ## Sources and evidence
 
@@ -65,4 +65,5 @@ portable default after the optional field-rule preference received no reply. No 
 season scoring equivalence or competition placement certification is claimed.
 
 See [RESULTS.md](RESULTS.md) for native evidence, regression counts and remaining physical
-validation needs. Delivery: branch `feat/advanced-physics-and-field-behavior`; PR pending.
+validation needs. Delivery: [PR #25](https://github.com/AtomicTrxn/ftc-forge/pull/25), merged as
+`06e69f1` on October 4, 2026 (America/New_York).
