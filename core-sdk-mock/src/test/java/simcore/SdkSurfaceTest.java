@@ -73,9 +73,9 @@ class SdkSurfaceTest {
         assertTrue(unlisted.isEmpty(), "Stub classes missing from sdk-surface.txt: " + unlisted);
     }
 
-    @Test void deferredVisionAndPinpointAreInTheRoster() throws Exception {
+    @Test void configuredVisionAndOdometryAreInTheRoster() throws Exception {
         Map<String, String> status = load().stream().collect(Collectors.toMap(Entry::className, Entry::status));
-        assertEquals("inert", status.get("org.firstinspires.ftc.vision.VisionPortal"));
+        assertEquals("simulated", status.get("org.firstinspires.ftc.vision.VisionPortal"));
         assertEquals("simulated", status.get("com.qualcomm.hardware.gobilda.GoBildaPinpointDriver"));
         assertEquals("simulated", status.get("com.qualcomm.hardware.sparkfun.SparkFunOTOS"));
         assertEquals("simulated", status.get("com.qualcomm.hardware.lynx.LynxModule"));

@@ -17,6 +17,29 @@ class ModelPreparationTest(unittest.TestCase):
     def load(self,kind='robot',reuse=None):return m.import_zip(self.package,self.library,kind,reuse)
     def ready(self,path):
         r=m.compile_profile(path);m.atomic_json(path.parent/'validation.json',{'valid':True,'effective_digest':r['effective_digest']});return m.save_revision(path,self.library,True)
+    def test_sensors_and_field_behavior_survive_bundle_and_changed_cad_review(self):
+        p=self.load();data=m.read(p)
+        data['runtime']['sensors']=[{'name':'range','type':'distance','link':'base','xyz_m':[.1,0,.1],'update_hz':30,'latency_ms':50,'noise_std_m':.002,'seed':7}]
+        data['runtime']['field_behavior']={'schema_version':1,'clock':{'auto_s':30,'transition_s':8,'teleop_s':120},'rules':[{'id':'target','alliance':'neutral','mode':'entry_once','types':['pollen'],'min_xyz_m':[.5,-.2,0],'max_xyz_m':[1,.2,.5],'points':2}], 'tags':[{'id':7,'name':'target','size_m':.16,'xyz_m':[1,0,.4],'rpy_rad':[0,0,math.pi]}]}
+        m.atomic_json(p,data);saved=self.ready(p);bundle=self.root/'sensors.zip';m.export_bundle(saved,bundle);restored=m.import_bundle(bundle,self.root/'portable');self.assertEqual(data['runtime'],m.read(restored)['runtime'])
+        self.zip(URDF.replace('0 0 .06','0 0 .07'));changed=m.import_zip(self.package,self.root/'portable','robot',restored);self.assertEqual(data['runtime'],m.read(changed)['runtime']);self.assertFalse(m.verify_receipt(changed)['ready'])
+        self.zip(URDF.replace('base','renamedbase'));renamed=m.import_zip(self.package,self.root/'portable','robot',changed);self.assertEqual('renamedbase',m.read(renamed)['runtime']['sensors'][0]['link']);self.assertEqual(data['runtime']['field_behavior'],m.read(renamed)['runtime']['field_behavior']);self.assertFalse(m.verify_receipt(renamed)['ready'])
+        for change in ['sensor','rule','tag']:
+            bad=copy.deepcopy(data)
+            if change=='sensor':bad['runtime']['sensors'][0]['update_hz']=999
+            if change=='rule':bad['runtime']['field_behavior']['rules'][0]['points']=.5
+            if change=='tag':bad['runtime']['field_behavior']['tags']*=2
+            with self.assertRaises(ValueError):m.validate(bad)
+
+    def test_rotating_wheels_preserve_settings_across_export_and_cad_migration(self):
+        saved,xml=self.measured_robot();p=m.fork_draft(saved,self.library);data=m.read(p)
+        data['runtime']['rotating_wheels']={'reflected_motor_inertia_kg_m2':.002}
+        data['runtime']['drive_contacts']['enabled']=False;data['parameters']['chassis_lock_level']=False
+        m.atomic_json(p,data);saved=self.ready(p);bundle=self.root/'rotating.zip';m.export_bundle(saved,bundle);restored=m.import_bundle(bundle,self.root/'portable')
+        self.assertEqual(data['runtime'],m.read(restored)['runtime']);self.assertFalse(m.read(restored)['parameters']['chassis_lock_level'])
+        self.zip(xml.replace('wheel_joint','renamed_joint'));changed=m.import_zip(self.package,self.root/'portable','robot',restored)
+        self.assertEqual(data['runtime'],m.read(changed)['runtime']);self.assertFalse(m.verify_receipt(changed)['ready'])
+
     def test_wheel_settings_round_trip_and_migration_preserve_reviewed_contact_mode(self):
         p=self.load();data=m.read(p);cfg=data['runtime']['drive_contacts'];self.assertTrue(cfg['enabled'])
         cfg.update(min_support_normal_y=.83,max_contact_gap_m=.001,rolling_resistance_coefficient=.02);m.atomic_json(p,data);saved=self.ready(p);before=saved.read_bytes()
@@ -92,7 +115,7 @@ class ModelPreparationTest(unittest.TestCase):
         spec['measurement']=evidence
         return {'traction':spec,'omni':{'static_mu':.8,'sliding_mu':.5,'lateral_scale':.05,'stiffness_n_per_mps':80.,'transition_mps':.2},'omni_joints':[],'reflected_motor_inertia_kg_m2':.0015,'contact_tolerance_m':.004}
     def test_tire_evidence_transport_and_cad_migration_preserve_original_measurements(self):
-        saved,xml=self.measured_robot();p=m.fork_draft(saved,self.library);data=m.read(p);tires=self.tire_evidence();data['runtime']['tires']=tires;m.atomic_json(p,data);saved=self.ready(p);original=saved.read_bytes()
+        saved,xml=self.measured_robot();p=m.fork_draft(saved,self.library);data=m.read(p);tires=self.tire_evidence();tires['traction_response']={'lateral_stiffness_n_per_mps':70.,'lateral_mu':.4,'relaxation_time_s':.08};data['runtime']['tires']=tires;m.atomic_json(p,data);saved=self.ready(p);original=saved.read_bytes()
         bundle=self.root/'tire.zip';m.export_bundle(saved,bundle);restored=m.import_bundle(bundle,self.root/'portable');self.assertEqual(tires,m.read(restored)['runtime']['tires'])
         self.zip(xml.replace('wheel_joint','renamed_joint'));changed=m.import_zip(self.package,self.root/'portable','robot',restored);self.assertEqual(tires,m.read(changed)['runtime']['tires']);self.assertFalse(m.verify_receipt(changed)['ready']);self.assertEqual(original,saved.read_bytes())
     def test_tire_evidence_rejects_wrong_class_sign_leakage_and_manual_parameter_changes(self):

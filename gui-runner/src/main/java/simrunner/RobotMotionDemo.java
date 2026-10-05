@@ -26,6 +26,7 @@ final class RobotMotionDemo implements AutoCloseable {
     final PhysicsWorld world;
     final ImportedRobotScene scene;
     final ArticulatedRobot robot;
+    final SceneSensors sensors;
     final List<Action> actions=new ArrayList<>();
     final List<Map<String,Object>> observations=new ArrayList<>();
     private final MecanumKinematics kinematics;
@@ -61,6 +62,7 @@ final class RobotMotionDemo implements AutoCloseable {
                 if(config.servoPhysics.containsKey(a.name()))hardware.register(a.name(),new SimServo(a.name()));
                 else hardware.register(a.name(),new SimDcMotorEx(a.name(),new MotorSpec("generic demo",1,2,9.2,30,12,500)));
             }
+            for(var sensor:config.sensors){if(hardware.tryGet(HardwareDevice.class,sensor.name())!=null)throw new IllegalArgumentException("Sensor name conflicts with an actuator: "+sensor.name());hardware.register(sensor.name(),switch(sensor.type()){case "distance"->new SimDistanceSensor(sensor.name());case "color"->new SimColorSensor(sensor.name());case "touch"->new SimTouchSensor(sensor.name());default->new org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName(sensor.name());});}
             HardwareMapBuilder.getBatteryModel().vInternal=12.6;HardwareMapBuilder.getBatteryModel().rBattery=.15;
             label="Generic demo motors; saved servo settings. Choose a project to verify device types and motor presets.";
             context="generic-demo-motors-v1";
@@ -82,6 +84,7 @@ final class RobotMotionDemo implements AutoCloseable {
             scene=new ImportedRobotScene(setup.urdf,setup.profile.artifact("robot"),setup.hardware,assets,setup.config.vhacdMaxHulls,setup.plan.driveNames);
             setup.profile.configure(scene);scene.tireContacts=setup.config.tires!=null;scene.flexibleIntake=setup.config.flexibleIntake;
             scene.driveContacts=setup.config.driveContacts;
+            scene.rotatingWheels=setup.config.rotatingWheels;
             CollisionAudit.inspect(scene).requireUsable();
             robot=new ArticulatedRobot(scene,world,root,new Vector3f(0,(float)setup.config.startHeightM,0),setup.config.servoPhysics);
             // Lift the whole assembly together to the neutral floor, retaining all joint frames.
@@ -94,6 +97,7 @@ final class RobotMotionDemo implements AutoCloseable {
             var floor=new PhysicsRigidBody(new BoxCollisionShape(new Vector3f(20,.02f,20)),0);floor.setPhysicsLocation(new Vector3f(0,-.02f,0));floor.setFriction(.6f);space.add(floor);
             if(setup.config.tires!=null)world.installTires(new TireDrive(world,setup.hardware,scene,setup.config.drive,setup.config.tires));
             if(setup.config.flexibleIntake!=null)world.installFlexibleIntake(new FlexibleIntake(world,scene,robot,setup.config.flexibleIntake));
+            sensors=new SceneSensors(world,robot,setup.hardware,setup.config.sensors,Map.of());
             if(setup.config.calibration!=null){var calibration=CalibrationProfile.load(setup.profile.directory.resolve(setup.config.calibration));calibration.applyHardware(setup.hardware);calibration.applyDrive(world);}
             var dimensions=DriveGeometry.resolve(setup.urdf,setup.config.driveGeometry);wheelRadii=dimensions.wheelRadii();kinematics=new MecanumKinematics(dimensions.trackWidthM(),dimensions.wheelbaseM(),2.);
             for(var m:setup.hardware.getAll(SimDcMotorEx.class))m.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
@@ -115,7 +119,7 @@ final class RobotMotionDemo implements AutoCloseable {
                 actions.add(new Action(group+"/second",group,String.format(Locale.ROOT,"%s — toward %.3f %s",m.joint().name(),low,unit),null,m,low));
             }
             if(!selection.isEmpty()){actions.removeIf(a->!a.group.equals(selection));observations.clear();if(actions.isEmpty())throw new IllegalArgumentException("No reachable movement for this selection. Check joint limits and servo travel.");}
-            world.driveControllerEnabled=!setup.plan.drive.isEmpty();
+            world.driveControllerEnabled=setup.config.rotatingWheels==null&&!setup.plan.drive.isEmpty();
             if(actions.isEmpty())finished=true;
         }catch(Exception e){space.destroy();throw e;}
     }
@@ -187,5 +191,5 @@ final class RobotMotionDemo implements AutoCloseable {
     }
     Map<String,Object> report(){var report=new LinkedHashMap<String,Object>();report.put("schema_version",2);report.put("run_id",runId);report.put("selection",selection);report.put("model_digest",setup.profile.digest);report.put("context",setup.context);report.put("hardware",setup.hardwareLabel);report.put("complete",finished&&!stopped);report.put("status",failure.isEmpty()?stopped?"stopped":finished?"finished":"running":"needs attention");report.put("observations",List.copyOf(observations));report.put("notes",setup.plan.notes);report.put("scope","Scripted native motion observations; not collision review or measured physical accuracy.");return report;}
     String status(){return failure.isEmpty()?finished?stopped?"Stopped":"Demo complete":paused?"Paused":action()==null?"Settling on the demo floor":action().label:failure;}
-    public void close(){stopMotors();space.destroy();}
+    public void close(){stopMotors();sensors.close();space.destroy();}
 }

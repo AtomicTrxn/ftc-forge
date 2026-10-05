@@ -73,8 +73,9 @@ final class PhysicsDiagnosticsOverlay {
         for(var m:s.motors().stream().limit(4).toList())t.append(shortName(m.name())).append(' ').append(f(m.command())).append(' ').append(f(m.speedRadS())).append(' ').append(f(m.torqueNm())).append(' ').append(f(m.currentA())).append('\n');
         if(s.motors().size()>4)t.append("More motors in saved snapshot (P).\n");
         t.append("Mechanisms: position, limits, effort\n");
-        for(var j:s.joints().stream().limit(4).toList())t.append(shortName(j.name())).append(' ').append(f(j.position())).append(' ').append(j.unit()).append(j.lower()==null?" (continuous)":" ["+f(j.lower())+", "+f(j.upper())+"]").append(j.effortIsLimit()?"\n  effort limit ":"\n  effort ").append(f(j.effort())).append(j.unit().equals("m")?" N":" N*m").append(" | rate ").append(f(j.velocity())).append(' ').append(j.unit()).append("/s\n");
-        if(s.joints().isEmpty())t.append("No articulated mechanisms.\n");if(s.joints().size()>4)t.append("More mechanisms in saved snapshot (P).\n");
+        var mechanisms=s.joints().stream().filter(j->s.wheels().stream().noneMatch(w->w.joint().equals(j.name()))).toList();
+        for(var j:mechanisms.stream().limit(4).toList())t.append(shortName(j.name())).append(' ').append(f(j.position())).append(' ').append(j.unit()).append(j.lower()==null?" (continuous)":" ["+f(j.lower())+", "+f(j.upper())+"]").append(j.effortIsEstimate()?"\n  estimated spring effort ":j.effortIsLimit()?"\n  effort limit ":"\n  effort ").append(f(j.effort())).append(j.unit().equals("m")?" N":" N*m").append(" | rate ").append(f(j.velocity())).append(' ').append(j.unit()).append("/s\n");
+        if(mechanisms.isEmpty())t.append("No articulated mechanisms.\n");if(mechanisms.size()>4)t.append("More mechanisms in saved snapshot (P).\n");
         t.append("Contacts shown: ").append(s.contacts().size()).append(s.truncated()?" (sampling limited)":"").append("\nModeled values; physical accuracy requires measurement.");return t.toString();
     }
     Path save(Path folder)throws Exception {

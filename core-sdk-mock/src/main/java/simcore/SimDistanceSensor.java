@@ -3,12 +3,14 @@ package simcore;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
-/** Trivial stub -- realistic behavior needs Phase 4's field/game-piece geometry (per R1). */
+/** Cached native scene measurement; retains a disclosed default until configured. */
 public class SimDistanceSensor implements DistanceSensor {
     private final String name;
     public SimDistanceSensor(String name) { this.name = name; }
+    private volatile double distanceM=1;
+    public void setDistanceMeters(double value){if(Double.isNaN(value)||value<0)throw new IllegalArgumentException("Distance must be nonnegative or infinity");distanceM=value;}
 
-    @Override public double getDistance(DistanceUnit unit) { return unit.fromMm(1000.0); }
+    @Override public double getDistance(DistanceUnit unit) { return unit.fromMeters(distanceM); }
     @Override public String getDeviceName() { return name; }
     @Override public String getConnectionInfo() { return "Simulated distance sensor \"" + name + "\""; }
     @Override public void close() { }

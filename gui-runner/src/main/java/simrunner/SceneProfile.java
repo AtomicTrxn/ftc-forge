@@ -12,7 +12,7 @@ final class SceneProfile {
             var model=new ModelProfile(path.getParent().resolve(ref),true);var identity=FieldPackage.map(scene.get(kind+"_identity"));
             if(!kind.equals(model.kind)||!identity.get("profile_id").equals(model.data.get("profile_id"))||!identity.get("revision_id").equals(model.data.get("revision_id")))throw new IllegalArgumentException("Scene model revision changed: "+kind+". Select a saved revision in the editor.");
             if(kind.equals("robot"))root.put("robot_model_profile",model.path.toString());
-            else root.put("field",new LinkedHashMap<>(Map.of("source","imported","package",model.path.toString(),"mode",scene.get("mode"))));
+            else {root.put("field",new LinkedHashMap<>(Map.of("source","imported","package",model.path.toString(),"mode",scene.get("mode"))));if(model.runtime.containsKey("field_behavior"))root.putIfAbsent("field_behavior",model.runtime.get("field_behavior"));}
         }
         if(scene.get("field_profile")==null)root.put("field",Map.of("source","generic","mode",scene.get("mode"),"piece_set",scene.getOrDefault("piece_set","biobuzz")));
         root.put("robot_start_xyz_m",scene.get("robot_start_xyz_m"));root.put("robot_start_yaw_rad",scene.get("robot_start_yaw_rad"));root.put("scene_pieces",scene.get("pieces"));return root;

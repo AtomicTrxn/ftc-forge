@@ -20,8 +20,8 @@ from prepare_biobuzz import extract, clustered, bounds, write_stl, combine, seri
 from prepare_rev_duo import rotation
 
 VERSION = 1
-RUNTIME_KEYS = ['drive', 'drive_contacts', 'intake', 'tires', 'flexible_intake', 'torus_retention', 'servoPhysics',
-                'collision_omissions', 'total_mass_kg', 'vhacd_max_hulls', 'start_height_m', 'imu_latency_ms']
+RUNTIME_KEYS = ['drive', 'drive_contacts', 'intake', 'tires', 'rotating_wheels', 'flexible_intake', 'torus_retention', 'servoPhysics',
+                'collision_omissions', 'sensors', 'field_behavior', 'total_mass_kg', 'vhacd_max_hulls', 'start_height_m', 'imu_latency_ms']
 DEFAULTS = dict(length_unit='m', up_axis='Z', origin_xyz_m=[0.,0.,0.], origin_rpy_rad=[0.,0.,0.],
                 collision_margin_m=.002, floor_thickness_m=.02, floor_margin_m=.001, contact_stiffness_n_per_m=1e30, contact_damping_ns_per_m=.1, chassis_lock_level=True, use_contact_compliance=False, fixed_restitution=0., fixed_rolling_friction=0., fixed_spinning_friction=0., floor_strategy='source', visual_grid_m=.0005, collision_grid_m=.001,
                 max_hulls=8, fallback_mass_kg=1., minimum_thickness_m=.001,
@@ -180,7 +180,8 @@ def body_owners(source, runtime=None):
             else:
                 powner=owner(parent);wheel=parent in wheel_branches or link['joint']['name'] in wheel_joints
                 if wheel:wheel_branches.add(name)
-                owners[name]=powner if link['joint']['type']=='fixed' or wheel else name
+                rotating='rotating_wheels' in runtime and wheel
+                owners[name]=powner if link['joint']['type']=='fixed' or wheel and not rotating else name
         return owners[name]
     for name in links:owner(name)
     return owners
@@ -280,11 +281,89 @@ def validate_tire_measurement(group, spec):
     # Native loading rechecks canonical context hash, optimization, all residuals and identification.
 
 
+def validate_scene_behavior(runtime):
+    def vector(value,count=3):
+        if not isinstance(value,list) or len(value)!=count:raise ValueError('Expected bounded scene vector')
+        for v in value:finite(v,-1000,1000)
+    sensors=runtime.get('sensors',[])
+    if not isinstance(sensors,list) or len(sensors)>32:raise ValueError('At most 32 scene sensors')
+    names=set()
+    bounds={'min_range_m':(0,100),'max_range_m':(.001,100),'update_hz':(1,120),'latency_ms':(0,1000),'noise_std_m':(0,.1),'seed':(-1e9,1e9),'contact_radius_m':(.0001,.5),'threshold_n':(0,100000),'horizontal_fov_rad':(.01,math.pi-.01),'vertical_fov_rad':(.01,math.pi-.01),'min_press_normal_cos':(0,1)}
+    for sensor in sensors:
+        if not isinstance(sensor,dict) or set(sensor)-({'name','type','link','xyz_m','rpy_rad'}|set(bounds)):raise ValueError('Unknown sensor setting')
+        name=sensor.get('name')
+        if not isinstance(name,str) or not name.strip() or name in names or sensor.get('type') not in ['distance','color','touch','camera']:raise ValueError('Sensors need unique names and supported types')
+        names.add(name)
+        if 'link' in sensor and (not isinstance(sensor['link'],str) or not sensor['link'].strip()):raise ValueError('Sensor link must be nonempty')
+        for key in ['xyz_m','rpy_rad']:vector(sensor.get(key,[0,0,0]))
+        for key,(low,high) in bounds.items():
+            if key in sensor:finite(sensor[key],low,high)
+        if sensor.get('max_range_m',2)<=sensor.get('min_range_m',.01):raise ValueError('Sensor ranges must increase')
+        if sensor.get('seed',0)!=int(sensor.get('seed',0)):raise ValueError('Sensor seed must be an integer')
+    field=runtime.get('field_behavior')
+    if field is None:return
+    if not isinstance(field,dict) or field.get('schema_version')!=1 or set(field)-{'schema_version','clock','rules','tags','colors','layout_reference'}:raise ValueError('Unknown field behavior/schema')
+    clock=field.get('clock',{})
+    if not isinstance(clock,dict) or set(clock)-{'auto_s','transition_s','teleop_s'}:raise ValueError('Unknown clock setting')
+    duration=0
+    for key,default in [('auto_s',30),('transition_s',8),('teleop_s',120)]:finite(clock.get(key,default),0,600);duration+=clock.get(key,default)
+    if duration<=0:raise ValueError('Clock duration must be positive')
+    rules=field.get('rules',[]);ids=set()
+    if not isinstance(rules,list) or len(rules)>128:raise ValueError('At most 128 scoring rules')
+    for rule in rules:
+        if not isinstance(rule,dict) or set(rule)-{'id','alliance','mode','containment','types','min_xyz_m','max_xyz_m','points','from_s','until_s'}:raise ValueError('Unknown scoring setting')
+        name=rule.get('id')
+        if not isinstance(name,str) or not name.strip() or name in ids:raise ValueError('Scoring rules need unique IDs')
+        ids.add(name)
+        if rule.get('alliance') not in ['red','blue','neutral'] or rule.get('mode') not in ['occupancy','entry_once','snapshot'] or rule.get('containment','center') not in ['center','partial','full']:raise ValueError('Invalid scoring rule mode/alliance/containment')
+        types=rule.get('types')
+        if not isinstance(types,list) or not 1<=len(types)<=64 or any(not isinstance(t,str) or not t.strip() for t in types):raise ValueError('Scoring types require names')
+        for key in ['min_xyz_m','max_xyz_m']:vector(rule.get(key))
+        if any(a==b for a,b in zip(rule['min_xyz_m'],rule['max_xyz_m'])):raise ValueError('Scoring region requires positive volume')
+        finite(rule.get('points',1),0,1000)
+        if rule.get('points',1)!=int(rule.get('points',1)):raise ValueError('Scoring points must be integers')
+        start=rule.get('from_s',0);end=rule.get('until_s',duration);finite(start,0,duration);finite(end,0,duration)
+        if end<=start:raise ValueError('Scoring window must increase')
+    tags=field.get('tags',[]);ids=set()
+    if not isinstance(tags,list) or len(tags)>64:raise ValueError('At most 64 tags')
+    for tag in tags:
+        identity=tag.get('id');finite(identity,0,10000)
+        if identity!=int(identity) or identity in ids or not isinstance(tag.get('name'),str) or not tag['name'].strip():raise ValueError('Tag IDs must be unique integers and have names')
+        ids.add(identity);finite(tag.get('size_m',.16),.001,2)
+        for key in ['xyz_m','rpy_rad']:vector(tag.get(key))
+    colors=field.get('colors',[])
+    if not isinstance(colors,list) or len(colors)>128:raise ValueError('At most 128 color regions')
+    for color in colors:
+        for key in ['min_xyz_m','max_xyz_m']:vector(color.get(key))
+        vector(color.get('rgba'),4)
+        for v in color['rgba']:
+            finite(v,0,255)
+            if v!=int(v):raise ValueError('Color channels must be integer 0..255')
+    ref=field.get('layout_reference')
+    if ref is not None:
+        if not isinstance(ref,dict) or set(ref)-{'source_url','revision','tolerance_m','instances'} or not str(ref.get('source_url','')).startswith('https://') or not str(ref.get('revision','')).strip():raise ValueError('Layout reference requires source URL/revision')
+        finite(ref.get('tolerance_m',.005),.00001,.1);ids=set()
+        if not isinstance(ref.get('instances'),list) or not ref['instances']:raise ValueError('Reference needs poses')
+        for item in ref['instances']:
+            if not isinstance(item.get('id'),str) or not item['id'].strip() or item['id'] in ids:raise ValueError('Duplicate/missing reference identity')
+            ids.add(item['id']);vector(item.get('xyz_m'))
+
+
 def validate(p):
     if p.get('schema_version')!=VERSION or p.get('model_kind') not in ['robot','field']:raise ValueError('Unsupported model profile version/type')
-    canonical(p);par=p['parameters']
+    canonical(p);par=p['parameters'];validate_scene_behavior(p['runtime'])
+    if 'rotating_wheels' in p['runtime']:
+        cfg=p['runtime']['rotating_wheels']
+        if not isinstance(cfg,dict) or set(cfg)!={'reflected_motor_inertia_kg_m2'}:raise ValueError('rotating_wheels requires reflected_motor_inertia_kg_m2')
+        finite(cfg['reflected_motor_inertia_kg_m2'],.000000001,1)
+        if 'drive' not in p['runtime'] or 'tires' in p['runtime'] or p['runtime'].get('drive_contacts',{}).get('enabled'):raise ValueError('Rotating wheels require differential drive without enabled brush/aggregate contact ownership')
     if 'tires' in p['runtime']:
         for group in ['traction','omni']:validate_tire_measurement(group,p['runtime']['tires'][group])
+        for key in ['traction_response','omni_response']:
+            if key in p['runtime']['tires']:
+                response=p['runtime']['tires'][key]
+                if not isinstance(response,dict) or set(response)!={'lateral_stiffness_n_per_mps','lateral_mu','relaxation_time_s'}:raise ValueError(key+' requires lateral stiffness, grip and relaxation time')
+                for name,high in [('lateral_stiffness_n_per_mps',100000),('lateral_mu',2),('relaxation_time_s',2)]:finite(response[name],0,high)
     if 'drive_contacts' in p['runtime']:
         c=p['runtime']['drive_contacts']
         if not isinstance(c.get('enabled'),bool):raise ValueError('drive_contacts.enabled must be true or false')
@@ -712,7 +791,7 @@ def resolve_migration(path,index,choice):
         p['provenance']=provenance
     if choice.startswith('Disable saved model: '):
         key=choice[21:];p['runtime'].pop(key,None)
-        for dependent in {'drive':['tires'],'intake':['flexible_intake','torus_retention'],'flexible_intake':['torus_retention']}.get(key,[]):p['runtime'].pop(dependent,None)
+        for dependent in {'drive':['tires','rotating_wheels'],'intake':['flexible_intake','torus_retention'],'flexible_intake':['torus_retention']}.get(key,[]):p['runtime'].pop(dependent,None)
         p['migration']['pending']=[q for q in p['migration']['pending'] if not q.get('runtime_path') or q['runtime_path'][0] in p['runtime']]
         if item not in p['migration']['pending']:p['migration']['pending'].insert(0,item)
         index=p['migration']['pending'].index(item)

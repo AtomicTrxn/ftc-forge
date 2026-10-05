@@ -13,23 +13,23 @@ com.qualcomm.hardware.lynx.LynxModule | simulated | clearBulkCache,close,getBulk
 com.qualcomm.hardware.rev.RevHubOrientationOnRobot | support | getLogoFacingDirection,getUsbFacingDirection
 com.qualcomm.hardware.sparkfun.SparkFunOTOS | simulated | begin,calibrateImu,close,getAcceleration,getAccelerationStdDev,getAngularScalar,getAngularUnit,getConnectionInfo,getDeviceName,getImuCalibrationProgress,getLinearScalar,getLinearUnit,getOffset,getPosVelAcc,getPosVelAccAndStdDev,getPosVelAccStdDev,getPosition,getPositionStdDev,getSignalProcessConfig,getStatus,getVelocity,getVelocityStdDev,getVersionInfo,isConnected,resetTracking,selfTest,setAngularScalar,setAngularUnit,setLinearScalar,setLinearUnit,setOffset,setPosition,setSignalProcessConfig
 com.qualcomm.robotcore.eventloop.opmode.Autonomous | support | group,name,preselectTeleOp
-com.qualcomm.robotcore.eventloop.opmode.Disabled | support | 
+com.qualcomm.robotcore.eventloop.opmode.Disabled | support |
 com.qualcomm.robotcore.eventloop.opmode.LinearOpMode | simulated | idle,init,isStarted,isStopRequested,loop,opModeInInit,opModeIsActive,runOpMode,sleep,waitForStart
 com.qualcomm.robotcore.eventloop.opmode.OpMode | simulated | getRuntime,init,init_loop,loop,resetRuntime,start,stop
 com.qualcomm.robotcore.eventloop.opmode.TeleOp | support | group,name
-com.qualcomm.robotcore.hardware.CRServo | state-only | 
-com.qualcomm.robotcore.hardware.ColorSensor | inert | alpha,blue,green,red
+com.qualcomm.robotcore.hardware.CRServo | state-only |
+com.qualcomm.robotcore.hardware.ColorSensor | simulated | alpha,blue,green,red
 com.qualcomm.robotcore.hardware.DcMotor | simulated | getCurrentPosition,getMode,getTargetPosition,getZeroPowerBehavior,isBusy,setMode,setTargetPosition,setZeroPowerBehavior
 com.qualcomm.robotcore.hardware.DcMotorEx | simulated | getCurrent,getPIDFCoefficients,getVelocity,setCurrentAlert,setPIDFCoefficients,setVelocity
 com.qualcomm.robotcore.hardware.DcMotorSimple | simulated | getDirection,getPower,setDirection,setPower
-com.qualcomm.robotcore.hardware.DistanceSensor | inert | getDistance
+com.qualcomm.robotcore.hardware.DistanceSensor | simulated | getDistance
 com.qualcomm.robotcore.hardware.Gamepad | inert | rumble,setLedColor
 com.qualcomm.robotcore.hardware.HardwareDevice | support | close,getConnectionInfo,getDeviceName
 com.qualcomm.robotcore.hardware.HardwareMap | simulated | get,getAll,getNamesOf,tryGet
 com.qualcomm.robotcore.hardware.IMU | simulated | getRobotAngularVelocity,getRobotYawPitchRollAngles,initialize,resetYaw
-com.qualcomm.robotcore.hardware.PIDFCoefficients | support | 
+com.qualcomm.robotcore.hardware.PIDFCoefficients | support |
 com.qualcomm.robotcore.hardware.Servo | state-only | getDirection,getPosition,setDirection,setPosition
-com.qualcomm.robotcore.hardware.TouchSensor | inert | isPressed
+com.qualcomm.robotcore.hardware.TouchSensor | simulated | isPressed
 com.qualcomm.robotcore.hardware.VoltageSensor | simulated | getVoltage
 com.qualcomm.robotcore.util.ElapsedTime | support | milliseconds,nanoseconds,reset,seconds
 com.qualcomm.robotcore.util.Range | support | clip
@@ -43,6 +43,9 @@ org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit | support | fro
 org.firstinspires.ftc.robotcore.external.navigation.Pose2D | support | getHeading,getX,getY
 org.firstinspires.ftc.robotcore.external.navigation.UnnormalizedAngleUnit | support | fromRadians,toRadians
 org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles | support | getAcquisitionTime,getPitch,getRoll,getYaw
-org.firstinspires.ftc.vision.VisionPortal | inert | close,getCameraState
-org.firstinspires.ftc.vision.apriltag.AprilTagDetection | inert | 
-org.firstinspires.ftc.vision.apriltag.AprilTagProcessor | inert | getDetections
+org.firstinspires.ftc.vision.VisionPortal | simulated | close,getCameraState,resumeStreaming,stopStreaming,setProcessorEnabled
+org.firstinspires.ftc.vision.apriltag.AprilTagDetection | support | id,metadata,ftcPose,frameAcquisitionNanoTime
+org.firstinspires.ftc.vision.apriltag.AprilTagProcessor | simulated | getDetections
+
+org.firstinspires.ftc.vision.apriltag.AprilTagPoseFtc | support | x,y,z,yaw,pitch,roll,range,bearing,elevation
+org.firstinspires.ftc.vision.apriltag.AprilTagMetadata | support | id,name,tagsize,distanceUnit

@@ -57,12 +57,15 @@ public class RobotConfigXml {
                 config.devices.add(new DeviceEntry(el.getTagName(), el.getAttribute("name"), el.getAttribute("port")));
             }
         }
+        NodeList cameras=doc.getElementsByTagName("Webcam");
+        for(int i=0;i<cameras.getLength();i++){Element camera=(Element)cameras.item(i);if(camera.getParentNode() instanceof Element parent&&!parent.getTagName().equals("LynxModule"))config.devices.add(new DeviceEntry("Webcam",camera.getAttribute("name"),camera.getAttribute("port")));}
         return config;
     }
 
     /** Resolves an XML tag name to a device-type category using the naming convention in R3's example. */
     public static DeviceType resolveType(String tag) {
         String t = tag.toLowerCase();
+        if (t.contains("webcam")) return DeviceType.CAMERA;
         if (t.contains("pinpoint")) return DeviceType.PINPOINT;
         if (t.contains("otos")) return DeviceType.OTOS;
         if (t.contains("crservo")) return DeviceType.CR_SERVO;
@@ -75,5 +78,5 @@ public class RobotConfigXml {
         return DeviceType.UNKNOWN;
     }
 
-    public enum DeviceType { MOTOR, SERVO, CR_SERVO, IMU, DISTANCE_SENSOR, COLOR_SENSOR, TOUCH_SENSOR, PINPOINT, OTOS, UNKNOWN }
+    public enum DeviceType { MOTOR, SERVO, CR_SERVO, IMU, DISTANCE_SENSOR, COLOR_SENSOR, TOUCH_SENSOR, PINPOINT, OTOS, CAMERA, UNKNOWN }
 }

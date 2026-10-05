@@ -34,7 +34,7 @@ final class CollisionAudit {
         }
         for(String owner:owners) {
             var members=scene.urdf.links.keySet().stream().filter(n->scene.owners.get(n).equals(owner)).sorted().toList();
-            int count=members.stream().filter(n->scene.wheelContactsEnabled()||!scene.wheelLinks.contains(n)).mapToInt(n->scene.urdf.links.get(n).collisions().size()).sum();
+            int count=members.stream().filter(n->scene.rotatingWheels!=null||scene.wheelContactsEnabled()||!scene.wheelLinks.contains(n)).mapToInt(n->scene.urdf.links.get(n).collisions().size()).sum();
             String reason=scene.collisionOmissions.get(owner);
             String status=count>0?"declared":reason==null?"missing":"intentional_noncontact";
             if(count==0 && reason==null)errors.add("Rigid body '"+owner+"' has no effective collision geometry. Add shapes to it or its fixed children; use previewRobot and auditCollisions to review the import.");
@@ -43,7 +43,7 @@ final class CollisionAudit {
             for(String name:members) {
                 RobotUrdf.Link link=scene.urdf.links.get(name);String treatment;
                 if(scene.wheelLinks.contains(name)) {
-                    treatment=scene.wheelContactsEnabled()?"native_drive_wheel_contacts":scene.tireContacts?"tire_contact_model":"drive_wheel_ballast";
+                    treatment=scene.rotatingWheels!=null?"rotating_native_wheel":scene.wheelContactsEnabled()?"native_drive_wheel_contacts":scene.tireContacts?"tire_contact_model":"drive_wheel_ballast";
                 }
                 else if(scene.flexibleIntake!=null && scene.flexibleIntake.links().contains(name))treatment="flexible_contacts_plus_rigid_proxy";
                 else if(!link.collisions().isEmpty())treatment="declared_on_link";

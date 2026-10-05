@@ -62,6 +62,22 @@ final class SyntheticRobots {
         if(mechanisms)runtime.put("servoPhysics",Map.of("gateServo",Map.of("stall_torque_nm",1.,"no_load_speed_rad_s",3.,"travel_rad",.5,"position_gain_per_s",8.,"velocity_gain_nm_per_rad_s",.2,"deadband_rad",.001)));
         c.update("robot",p);c.compile("robot");return c;
     }
+    static GuidedSetupController rotatingRobot(Path tmp,boolean suspension)throws Exception {
+        String xml=SyntheticRobots.urdf(false,false,false,SyntheticRobots.Dimensions.standard())
+            .replace("left_front_drive","leftDrive").replace("left_back_drive","leftDrive").replace("right_front_drive","rightDrive").replace("right_back_drive","rightDrive");
+        for(int i:new int[]{0,2})xml=xml.replace("<axis xyz='0 1 0'/></joint><transmission name='wheel_joint"+i,"<axis xyz='0 -1 0'/></joint><transmission name='wheel_joint"+i);
+        if(suspension)for(int i=0;i<4;i++) {
+            String x=i<2?".1":"-.1",y=i%2==0?".13":"-.13";
+            String mount="<parent link='base'/><child link='wheel"+i+"'/><origin xyz='"+(i<2?"0.1":"-0.1")+" "+(i%2==0?"0.13":"-0.13")+" 0'/>";
+            xml=xml.replace(mount,"<parent link='carrier"+i+"'/><child link='wheel"+i+"'/><origin xyz='0 0 0'/>");
+            xml=xml.replace("</robot>",SyntheticRobots.box("carrier"+i,".01 .01 .01",.03)+SyntheticRobots.joint("spring"+i,"carrier"+i,"prismatic",x+" "+y+" 0","0 0 1",-.02,.04)+"</robot>");
+        }
+        var c=new GuidedSetupController(tmp.resolve(suspension?"springs":"rigid"),null);c.session.start("robot",null);c.load("robot","fresh",SyntheticRobots.zip(tmp.resolve(suspension?"spring.zip":"rigid.zip"),"robot.urdf",xml),null);
+        var p=c.session.profile("robot");var runtime=FieldPackage.map(p.get("runtime"));runtime.put("drive",Map.of("type","differential","left_motor","leftDrive","right_motor","rightDrive","track_width_m",.26,"wheel_radius_m",.045,"left_shaft_sign",-1,"right_shaft_sign",1));
+        runtime.put("rotating_wheels",Map.of("reflected_motor_inertia_kg_m2",.0015));FieldPackage.map(runtime.get("drive_contacts")).put("enabled",false);FieldPackage.map(p.get("parameters")).put("chassis_lock_level",false);
+        if(suspension)for(int i=0;i<4;i++){var s=FieldPackage.map(FieldPackage.map(FieldPackage.map(p.get("entities")).get("carrier"+i)).get("settings"));s.put("joint_spring_n_per_m",500.);s.put("joint_damping_ns_per_m",5.);s.put("joint_rest_m",0.);}
+        c.update("robot",p);c.compile("robot");return c;
+    }
     /** Deliberately expressed in millimeters to exercise explicit source units. */
     static String stlBox() {
         double[][] v={{0,0,0},{100,0,0},{100,80,0},{0,80,0},{0,0,60},{100,0,60},{100,80,60},{0,80,60}};
