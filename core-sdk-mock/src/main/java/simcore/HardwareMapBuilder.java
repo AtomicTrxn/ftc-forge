@@ -87,6 +87,13 @@ public class HardwareMapBuilder {
         lastTickNanos = now;
         simTimeMs += Math.round(dtSeconds * 1000);
 
+        tickMotors(map, dtSeconds, simTimeMs);
+    }
+
+    /** External fixed-step clock. Do not combine with the wall-clock ticker in one run. */
+    public static synchronized void tickMotors(HardwareMap map, double dtSeconds, long timeMs) {
+        if (!Double.isFinite(dtSeconds) || dtSeconds < 0 || dtSeconds > .1 || timeMs < 0)
+            throw new IllegalArgumentException("Motor tick requires finite dt 0..0.1s and nonnegative time");
         List<SimDcMotorEx> motors = new ArrayList<>();
         for (var m : map.getAll(com.qualcomm.robotcore.hardware.DcMotor.class)) {
             if (m instanceof SimDcMotorEx) motors.add((SimDcMotorEx) m);
@@ -100,7 +107,7 @@ public class HardwareMapBuilder {
         double batteryVoltage = BATTERY.solveBatteryVoltage(states);
 
         for (SimDcMotorEx m : motors) {
-            m.integrate(batteryVoltage, dtSeconds, simTimeMs);
+            m.integrate(batteryVoltage, dtSeconds, timeMs);
         }
         for (var v : map.getAll(SimVoltageSensor.class)) {
             v.setVoltage(batteryVoltage);

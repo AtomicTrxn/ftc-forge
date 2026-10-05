@@ -226,3 +226,13 @@ tasks.register('generateAdvancedFixture', JavaExec) {
     mainClass = 'simrunner.AdvancedPhysicsFixture'
     workingDir = rootProject.projectDir
 }
+
+tasks.register('runHeadlessPhysics', JavaExec) {
+    group = 'application'
+    description = 'Run compiled TeamCode with native physics/sensors and JSON evidence, without a window.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'simrunner.HeadlessPhysicsMain'
+    workingDir = rootProject.projectDir
+    jvmArgs = ['-Djava.awt.headless=true']
+    maxHeapSize = '2g'
+}

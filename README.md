@@ -36,6 +36,7 @@ The included Gradle wrapper downloads Gradle 8.9 on its first run. From the repo
 ./gradlew test
 ./gradlew :gui-runner:run --args='gui-runner/sample-teamcode IterativeDriveOpMode'
 ./gradlew :gui-runner:run --args='gui-runner/sample-teamcode DashboardOpMode'
+./gradlew :gui-runner:runHeadlessPhysics --args='gui-runner/sample-teamcode TurnAndResetOpMode --duration 3'
 ./gradlew :gui-runner:runSimulatorApp --args='gui-runner/sample-teamcode TurnAndResetOpMode'
 ```
 
@@ -59,7 +60,7 @@ For configured differential tires, **Measure tire slip…** adds [steady longitu
 
 Imported robot collision coverage is checked per rigid body before physics starts. The selector's **Review collisions** action shows actual native shapes for the selected robot and field; C toggles collision shapes and V toggles CAD visibility. Save a coverage report with `./gradlew :gui-runner:auditCollisions --args='/absolute/robotProject /absolute/report.json'`. See [collision review](gui-runner/COLLISION_REVIEW.md).
 
-To use your own robot, replace `gui-runner/sample-teamcode` in the commands with an absolute path or a path relative to the repository root. The second argument is the annotated OpMode's class name or display name. The headless runner accepts an optional third argument for watchdog timeout in milliseconds.
+To use your own robot, replace `gui-runner/sample-teamcode` in the commands with an absolute path or a path relative to the repository root. The second argument is the annotated OpMode's class name or display name. The legacy headless runner accepts an optional third argument for watchdog timeout in milliseconds. Use [physics-backed headless TeamCode](gui-runner/HEADLESS_PHYSICS.md) for native chassis/mechanism motion, sensor feedback and JSON evidence without a window.
 
 ## Team project configuration
 
@@ -75,7 +76,7 @@ Place `sim.config` at the team project root. Paths inside it are relative to tha
 }
 ```
 
-`extraClasspath` may contain paths to local jars or class directories used by team code. They are added to both compilation and runtime class loading. `imu_latency_ms` accepts 0–200 and defaults to 8; orientation and body angular rates in the 3D renderer come from the physics chassis. Headless runs do not create a physics world, so their IMU remains at its initial orientation. Level chassis is the default; disabling `chassis_lock_level` in an imported model allows pitch/roll. IMU axes use the simulator URDF robot frame; physical hub mounting is not inferred.
+`extraClasspath` may contain paths to local jars or class directories used by team code. They are added to both compilation and runtime class loading. `imu_latency_ms` accepts 0–200 and defaults to 8; orientation and body angular rates in the 3D renderer and physics-backed headless runs come from the native chassis. Legacy motor-only headless runs retain their initial IMU orientation. Level chassis is the default; disabling `chassis_lock_level` in an imported model allows pitch/roll. IMU axes use the simulator URDF robot frame; physical hub mounting is not inferred.
 
 To import custom robot geometry, add `urdf` and optionally `total_mass_kg` and `vhacd_max_hulls`. See [the import guide](gui-runner/ROBOT_IMPORT.md) for the XML/URDF pairing, a sample package, and the current CAD export constraints.
 

@@ -8,7 +8,7 @@ import simcore.PoseSink;
 
 /**
  * Simulated SparkFun Qwiic OTOS. Public surface follows SparkFun's FTC library (SparkFunOTOS.java);
- * the chassis pose comes from the physics world and stays at the start pose headless. Scalars,
+ * the chassis pose comes from renderer/headless physics; the legacy motor-only executor keeps the start pose. Scalars,
  * signal-processing flags, self-test and tracking noise/dropouts are accepted but not modeled.
  */
 public class SparkFunOTOS implements HardwareDevice, PoseSink {
