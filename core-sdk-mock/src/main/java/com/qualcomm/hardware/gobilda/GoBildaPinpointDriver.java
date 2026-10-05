@@ -11,7 +11,7 @@ import simcore.PoseSink;
 /**
  * Simulated goBILDA Pinpoint. Public surface follows the vendor driver
  * (goBILDA-Official/goBILDA-Pinpoint-Odometry-Computer-FTC-Driver, GoBildaPinpointDriver.java).
- * Reports the chassis pose from the physics world; with no physics (headless) it stays at the
+ * Reports the chassis pose from the physics world; with no physics (legacy motor-only executor) it stays at the
  * start pose. Pod offsets, encoder settings, I2C latency and pod faults are accepted but not modeled.
  */
 public class GoBildaPinpointDriver implements HardwareDevice, PoseSink {

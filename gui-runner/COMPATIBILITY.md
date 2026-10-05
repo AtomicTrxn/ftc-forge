@@ -17,8 +17,9 @@ through the real executor on every `./gradlew test`.
   repositories and were not downloaded or tested here. To try them, add their jars (plus the Kotlin standard library) to
   `extraClasspath` in `sim.config`. Whatever then fails to compile is reported with a "Simulator support notes"
   section; please add real findings to this file.
-- Pose devices follow the physics chassis in the 3D renderer only; the renderer path was compiled but not exercised
-  by an automated GPU test, and headless runs keep the start pose.
+- Pose devices follow native chassis motion in the 3D renderer and [physics-backed headless runs](HEADLESS_PHYSICS.md).
+  Compiled closed-loop TeamCode tests validate native Pinpoint/OTOS and IMU feedback. Legacy motor-only headless runs
+  keep the start pose. These tests do not establish compatibility with real vendor pathing jars.
 - Method lists of the Pinpoint and OTOS stubs were taken from the vendors' public source
   (goBILDA `GoBildaPinpointDriver.java`, SparkFun `SparkFunOTOS.java`). The goBILDA file is a vendored driver in
   its own repository; the SDK's built-in copy may differ by version. Pin the version you test against.

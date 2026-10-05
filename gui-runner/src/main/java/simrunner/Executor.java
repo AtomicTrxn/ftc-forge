@@ -29,11 +29,22 @@ public class Executor {
     public static class Session {
         public final Thread opModeThread;
         public final RunResult result;
-        Session(Thread opModeThread, RunResult result) {
+        private final OpMode instance;
+        Session(Thread opModeThread, RunResult result, OpMode instance) {
+            this.instance = instance;
             this.opModeThread = opModeThread;
             this.result = result;
         }
         public boolean isAlive() { return opModeThread.isAlive(); }
+        public void signalStart() {
+            if (instance instanceof LinearOpMode linear) linear.internalSignalStart();
+        }
+        /** Cooperative stop only. An interrupt-ignoring daemon requires process isolation. */
+        public void requestStop() {
+            instance.requestOpModeStop();
+            if (instance instanceof LinearOpMode linear) linear.internalSignalStop();
+            opModeThread.interrupt();
+        }
     }
 
     /** Starts either OpMode style on its own thread and returns without waiting for completion. */
@@ -41,6 +52,18 @@ public class Executor {
                                  HardwareMap hardwareMap,
                                  Telemetry telemetry,
                                  Gamepad gamepad1, Gamepad gamepad2) throws Exception {
+        return start(discovered, hardwareMap, telemetry, gamepad1, gamepad2, false);
+    }
+
+    /** Returns immediately. Caller owns motor ticks and the LinearOpMode PLAY signal. */
+    public static Session startExternallyDriven(OpModeDiscovery.DiscoveredOpMode discovered,
+            HardwareMap hardwareMap, Telemetry telemetry, Gamepad gamepad1, Gamepad gamepad2) throws Exception {
+        return start(discovered, hardwareMap, telemetry, gamepad1, gamepad2, true);
+    }
+
+    private static Session start(OpModeDiscovery.DiscoveredOpMode discovered,
+            HardwareMap hardwareMap, Telemetry telemetry, Gamepad gamepad1, Gamepad gamepad2,
+            boolean externalClock) throws Exception {
         OpMode instance = discovered.opModeClass.getDeclaredConstructor().newInstance();
         instance.hardwareMap = hardwareMap;
         instance.telemetry = telemetry;
@@ -74,16 +97,16 @@ public class Executor {
         tickThread.setDaemon(true);
 
         opModeThread.start();
-        tickThread.start();
+        if (!externalClock) tickThread.start();
 
         // Headless stand-in for the Driver Station's INIT->PLAY transition. Iterative
         // OpModes perform their own short INIT period inside runIterative().
-        if (instance instanceof LinearOpMode linear) {
+        if (!externalClock && instance instanceof LinearOpMode linear) {
             Thread.sleep(50);
             linear.internalSignalStart();
         }
 
-        return new Session(opModeThread, result);
+        return new Session(opModeThread, result, instance);
     }
 
     private static void runIterative(OpMode opMode) throws InterruptedException {

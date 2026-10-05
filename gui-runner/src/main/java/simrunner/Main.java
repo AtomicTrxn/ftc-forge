@@ -16,14 +16,20 @@ import java.util.List;
 
 /**
  * Phase 1 headless executor entry point.
- * Usage: java simrunner.Main <projectDir> <opModeClassSimpleNameOrFQCN> [watchdogTimeoutMillis]
+ * Usage: java simrunner.Main <projectDir> <opModeClassSimpleNameOrFQCN> [watchdogTimeoutMillis | --physics physicsOptions...]
  */
 public class Main {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
-            System.err.println("Usage: Main <projectDir> <opModeName> [watchdogTimeoutMillis]");
+            System.err.println("Usage: Main <projectDir> <opModeName> [watchdogTimeoutMillis | --physics physicsOptions...]");
             System.exit(2);
+        }
+        if (args.length >= 3 && args[2].equals("--physics")) {
+            var physicsArgs = new java.util.ArrayList<>(java.util.Arrays.asList(args));
+            physicsArgs.remove(2);
+            HeadlessPhysicsMain.main(physicsArgs.toArray(String[]::new));
+            return;
         }
         Path projectDir = Path.of(args[0]);
         String requestedOpMode = args[1];

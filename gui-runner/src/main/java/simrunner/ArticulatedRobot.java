@@ -347,7 +347,11 @@ final class ArticulatedRobot implements PhysicsTickListener {
             }
             // Implicit back-EMF integration prevents high reductions from oscillating each step.
             if (joint.effort() != null) effort = Math.max(-joint.effort(), Math.min(joint.effort(), effort));
-            effort /= 1 + dt * damping * inverseEffective;
+            // A native wheel motor solves carrier/chassis reactions in Bullet. A suspension
+            // carrier's tiny standalone inertia is not its constrained reaction inertia.
+            // Stabilize back-EMF with rotor inertia only; let the native motor solve the load.
+            double dampingInverse = rotatingWheel ? 1 / rotatingInertia(this) : inverseEffective;
+            effort /= 1 + dt * damping * dampingInverse;
             boolean elasticAxis = hinge != null && scene.flexibleIntake != null &&
                 (attachedInertia.containsKey(child.part().name()) || axes.stream().anyMatch(a -> joint.name().equals(a.joint.mimic()) && attachedInertia.containsKey(a.child.part().name())));
             if ((elasticAxis||rotatingWheel) && !actuators.isEmpty()) {

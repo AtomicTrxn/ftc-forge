@@ -61,3 +61,8 @@ R6 CAD & Robot Config Pipeline (needs R3) ────────────�
 
 - [Plan](rev-duo-physics/PLAN.md)
 - [Implementation and validation results](rev-duo-physics/RESULTS.md)
+
+## Physics-backed headless TeamCode
+
+- [Plan](headless-teamcode/PLAN.md)
+- [Implementation and validation results](headless-teamcode/RESULTS.md)
