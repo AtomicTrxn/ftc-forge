@@ -117,6 +117,36 @@ The BIOBUZZ adapter exposes its actual authored shapes and mechanical values und
 
 The previously prepared source remains unchanged. The current team's validated local revisions and scene live in `.local/models`; they are not part of the public repository.
 
+## Larger assemblies and exported visual poses
+
+CAD imports allow at most 2,000 ZIP entries and 1 GiB of expanded content by default.
+Extraction streams mesh data in 1 MiB chunks. The backend accepts an explicit smaller
+or larger budget, up to 2 GiB, with `import --max-expanded-mib 1536`; the desktop guide
+uses the default budget. Portable bundle extraction uses the same default bound.
+
+When an exporter gives a visual an incorrect pose within its link, an advanced profile
+can set `entities/<link>/settings/visual_origin_overrides`:
+
+```json
+[{"visual_index": 0, "xyz_m": [0, 0, 0], "rpy_rad": [0, 0, 0]}]
+```
+
+Each index selects one source visual; coordinates use meters and radians. This changes
+its prepared visual pose while preserving the source bytes, joint frame and descendants.
+Visual/mesh collision generation follows the correction. Explicit primitive collision
+poses must be updated separately and reviewed. Existing override coordinates can be
+edited in Advanced settings; adding an override currently requires editing the draft
+JSON. Saved revisions and portable bundles retain these corrections. Compatible CAD
+migration offers **Keep saved visual origin corrections** or **Use new CAD visual
+origins** when the source visual or joint frame changes. Selecting new CAD origins
+regenerates visual collision candidates and requires another review.
+
+Assembly mate trees are not necessarily mechanical ownership trees. Before converting
+a fixed wheel joint to continuous, inspect its descendants: a wheel may have stationary
+chassis parts beneath it in the export. Reparent those fixed parts with poses that preserve
+their assembly placement, retaining actual moving subassemblies. This preparation is
+model specific; the importer does not infer it automatically.
+
 ## Backend and native checks
 
 ```sh

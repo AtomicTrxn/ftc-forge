@@ -20,6 +20,20 @@ class FieldPreparationTests(unittest.TestCase):
                 with self.assertRaises(ValueError): extract(archive, Path(tmp)/'out')
                 self.assertFalse((Path(tmp)/'out').exists())
 
+    def test_expanded_byte_budget_is_checked_before_writing_and_streamed_bytes_are_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp)/'larger.zip'
+            content = b'robot geometry' * 100000
+            with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as z:
+                z.writestr('package/mesh.stl', content)
+            with self.assertRaisesRegex(ValueError, 'import budget'):
+                extract(archive, Path(tmp)/'too-small', len(content)-1)
+            self.assertFalse((Path(tmp)/'too-small').exists())
+            extract(archive, Path(tmp)/'accepted', len(content))
+            self.assertEqual(content, (Path(tmp)/'accepted/package/mesh.stl').read_bytes())
+            for budget in [0, -1, True, 3*1024*1024*1024]:
+                with self.assertRaises(ValueError): extract(archive, Path(tmp)/'invalid', budget)
+
     def test_metric_clustering_is_deterministic_and_dimension_error_bounded(self):
         triangles = [((.00013, .00012, 0), (.10023, 0, 0), (0, .20021, 0))]
         reduced = clustered(triangles, .0005)

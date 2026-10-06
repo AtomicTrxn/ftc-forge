@@ -16,7 +16,7 @@ import tempfile
 import uuid
 import xml.etree.ElementTree as ET
 import zipfile
-from prepare_biobuzz import extract, clustered, bounds, write_stl, combine, serial_pose, IDENTITY
+from prepare_biobuzz import extract, clustered, bounds, write_stl, combine, serial_pose, IDENTITY, MAX_ARCHIVE_BYTES
 from prepare_rev_duo import rotation
 
 VERSION = 1
@@ -205,7 +205,7 @@ def new_profile(urdf, kind, runtime=None):
         lo,hi=l['bounds'];size=[max(DEFAULTS['minimum_thickness_m'],hi[i]-lo[i]) for i in range(3)]
         needs_wheel_geometry=wheel_roots.get(n) is not None and wheel_roots[n] not in wheel_covered
         strategy='source' if l['collisions'] else 'none' if owners[n] in covered and not needs_wheel_geometry or not l['visuals'] else 'visual' if all(v['geometry']['kind']!='mesh' for v in l['visuals']) else 'box'
-        p['entities'][n]={'id':uid(),'settings':{'role':'structure','collision_strategy':strategy,'box_size_m':size,'collision_xyz_m':[(lo[i]+hi[i])/2 for i in range(3)],'collision_rpy_rad':[0.,0.,0.],'sphere_radius_m':max(size)/2,'cylinder_length_m':size[2],'mass_mode':'source' if l['mass_kg']>0 else 'fallback','mass_kg':l['mass_kg'] if l['mass_kg']>0 else DEFAULTS['fallback_mass_kg'],'inertia_mode':'source' if l['inertia'] and l['mass_kg']>0 else 'box','inertia_kg_m2':[.01,.01,.01,0.,0.,0.],'com_xyz_m':[0.,0.,0.],'material_override':False,'friction':.6,'restitution':.15,'rolling_friction':.005,'spinning_friction':.005,'joint':copy.deepcopy(l['joint']),'joint_spring_nm_per_rad':0.,'joint_damping_nm_s':0.,'joint_rest_rad':0.,'joint_spring_n_per_m':0.,'joint_damping_ns_per_m':0.,'joint_rest_m':0.,'actuators':[{'name':a.get('name'),'mechanicalReduction':float(a.findtext('mechanicalReduction','1'))} for tx in source_xml.findall('transmission') if tx.find('joint').get('name')==(l['joint'] or {}).get('name') for a in tx.findall('actuator')]},'assumptions':['Bounding box may fill hollow openings; review shape strategy'] if strategy=='box' else ['Fixed-body aggregate proxy; surface coverage requires review'] if strategy=='none' and l['visuals'] else [],'provenance':'source CAD' if strategy=='source' else 'generated default'}
+        p['entities'][n]={'id':uid(),'settings':{'role':'structure','collision_strategy':strategy,'box_size_m':size,'collision_xyz_m':[(lo[i]+hi[i])/2 for i in range(3)],'collision_rpy_rad':[0.,0.,0.],'sphere_radius_m':max(size)/2,'cylinder_length_m':size[2],'mass_mode':'source' if l['mass_kg']>0 else 'fallback','mass_kg':l['mass_kg'] if l['mass_kg']>0 else DEFAULTS['fallback_mass_kg'],'inertia_mode':'source' if l['inertia'] and l['mass_kg']>0 else 'box','inertia_kg_m2':[.01,.01,.01,0.,0.,0.],'com_xyz_m':[0.,0.,0.],'material_override':False,'friction':.6,'restitution':.15,'rolling_friction':.005,'spinning_friction':.005,'joint':copy.deepcopy(l['joint']),'joint_spring_nm_per_rad':0.,'joint_damping_nm_s':0.,'joint_rest_rad':0.,'joint_spring_n_per_m':0.,'joint_damping_ns_per_m':0.,'joint_rest_m':0.,'visual_origin_overrides':[],'actuators':[{'name':a.get('name'),'mechanicalReduction':float(a.findtext('mechanicalReduction','1'))} for tx in source_xml.findall('transmission') if tx.find('joint').get('name')==(l['joint'] or {}).get('name') for a in tx.findall('actuator')]},'assumptions':['Bounding box may fill hollow openings; review shape strategy'] if strategy=='box' else ['Fixed-body aggregate proxy; surface coverage requires review'] if strategy=='none' and l['visuals'] else [],'provenance':'source CAD' if strategy=='source' else 'generated default'}
     if kind=='field':
         candidates=[(math.prod([l['bounds'][1][i]-l['bounds'][0][i] for i in range(2)]),n) for n,l in description['links'].items() if l['visuals'] and l['bounds'][1][2]-l['bounds'][0][2]<.05]
         if not candidates:
@@ -399,6 +399,17 @@ def validate(p):
         for key in ['collision_xyz_m','collision_rpy_rad','com_xyz_m']:
             if len(s[key])!=3:raise ValueError('Expected three coordinates')
             for v in s[key]:finite(v,-1000,1000)
+        overrides=s.get('visual_origin_overrides',[])
+        if not isinstance(overrides,list):raise ValueError('Visual origin overrides must be a list')
+        seen=set()
+        for override in overrides:
+            if not isinstance(override,dict) or set(override)!={'visual_index','xyz_m','rpy_rad'}:raise ValueError('Visual origin override needs visual_index, xyz_m and rpy_rad')
+            index=override['visual_index']
+            if isinstance(index,bool) or not isinstance(index,(int,float)) or not math.isfinite(index) or index!=int(index) or not 0<=index<len(p['source']['links'][name]['visuals']) or index in seen:raise ValueError('Visual origin index must select a unique source visual')
+            seen.add(index)
+            for key in ['xyz_m','rpy_rad']:
+                if not isinstance(override[key],list) or len(override[key])!=3:raise ValueError('Visual origin needs three finite coordinates')
+                for value in override[key]:finite(value,-1000,1000)
         for a in s['actuators']:
             if not isinstance(a['name'],str) or not a['name']:raise ValueError('Actuator name required')
             finite(a['mechanicalReduction'],-100000,100000)
@@ -447,6 +458,10 @@ def compiled_robot(p, source_dir, output):
     links={l.get('name'):l for l in root.findall('link')};cache={};asset_cache=read(output/'mesh-cache.json') if (output/'mesh-cache.json').is_file() else {}
     for name,l in links.items():
         s=p['entities'][name]['settings'];mode=s['collision_strategy']
+        for override in s.get('visual_origin_overrides',[]):
+            visual=l.findall('visual')[int(override['visual_index'])];o=visual.find('origin')
+            if o is None:o=ET.SubElement(visual,'origin')
+            o.set('xyz',' '.join(map(str,override['xyz_m'])));o.set('rpy',' '.join(map(str,override['rpy_rad'])))
         if mode!='source':
             for c in l.findall('collision'):l.remove(c)
             if mode=='box':add_shape(l,ET.Element('box',size=' '.join(map(str,s['box_size_m']))),s['collision_xyz_m'],s['collision_rpy_rad'])
@@ -657,6 +672,9 @@ def migrate(old,new):
         if candidate is not None and candidate not in used and (old['source']['links'][candidate]['joint'] or {}).get('type')==(l['joint'] or {}).get('type') and (old['source']['links'][candidate]['parent']==l['parent'] or old['source']['links'][candidate]['parent'] is not None and l['parent'] is not None and old['source']['links'][old['source']['links'][candidate]['parent']]['geometry_signature']==new['source']['links'][l['parent']]['geometry_signature']):
             used.add(candidate);cad_actuators=copy.deepcopy(entity['settings']['actuators']);entity=copy.deepcopy(old['entities'][candidate]);
             old_joint=old['source']['links'][candidate]['joint'];new_joint=l['joint']
+            visual_poses=lambda link:[(v['xyz'],v['rpy']) for v in link['visuals']]
+            if entity['settings'].get('visual_origin_overrides') and (visual_poses(old['source']['links'][candidate])!=visual_poses(l) or old_joint!=new_joint):
+                pending.append({'new':name,'visual_origin_link':name,'options':['Keep saved visual origin corrections','Use new CAD visual origins'],'reason':'Source visual/frame placement changed; review saved visual corrections and collision geometry'})
             old_tx=[x for x in xml_source_transmissions(old) if old_joint and x['joint']==old_joint['name']]
             new_tx=[x for x in xml_source_transmissions(new) if new_joint and x['joint']==new_joint['name']]
             if old_tx!=new_tx:pending.append({'new':name,'binding_link':name,'cad_actuators':cad_actuators,'options':['Keep saved bindings','Use new CAD bindings'],'reason':'Source transmission/hardware bindings changed'})
@@ -710,11 +728,11 @@ def migrate(old,new):
     return new
 
 
-def import_zip(source,library,kind,reuse=None,fresh=False):
+def import_zip(source,library,kind,reuse=None,fresh=False,max_expanded_bytes=MAX_ARCHIVE_BYTES):
     library=Path(library).resolve();library.mkdir(parents=True,exist_ok=True)
     folder=library/'drafts'/uid();folder.mkdir(parents=True)
     try:
-        extract(source,folder/'archive');urdfs=[f for f in (folder/'archive').rglob('*') if f.suffix.lower()=='.urdf']
+        extract(source,folder/'archive',max_expanded_bytes);urdfs=[f for f in (folder/'archive').rglob('*') if f.suffix.lower()=='.urdf']
         if len(urdfs)!=1:raise ValueError('Expected one URDF in ZIP')
         urdf=source_copy(urdfs[0],folder/'source');p=new_profile(urdf,kind)
         if fresh and reuse:raise ValueError('Choose fresh defaults or reuse settings, not both')
@@ -795,6 +813,12 @@ def resolve_migration(path,index,choice):
         p['migration']['pending']=[q for q in p['migration']['pending'] if not q.get('runtime_path') or q['runtime_path'][0] in p['runtime']]
         if item not in p['migration']['pending']:p['migration']['pending'].insert(0,item)
         index=p['migration']['pending'].index(item)
+    if item.get('visual_origin_link') and choice=='Use new CAD visual origins':
+        name=item['visual_origin_link'];settings=p['entities'][name]['settings']
+        settings['visual_origin_overrides']=[];settings['collision_strategy']='visual'
+        base='entities/'+pointer(name)+'/settings/visual_origin_overrides'
+        p['provenance']={key:value for key,value in p['provenance'].items() if key!=base and not key.startswith(base+'/')}
+        p['provenance'][base]='source CAD';p['provenance']['entities/'+pointer(name)+'/settings/collision_strategy']='generated from newly selected CAD visual origins; review required'
     if item.get('entity_parent') and choice.startswith('Parent: '):p['entities'][item['entity_parent']]['settings']['joint']['parent']=choice[8:]
     if item.get('binding_link') and choice=='Use new CAD bindings':
         p['entities'][item['binding_link']]['settings']['actuators']=item['cad_actuators']
@@ -884,7 +908,7 @@ def import_bundle(bundle,library):
 
 def main():
     a=argparse.ArgumentParser(description=__doc__);sub=a.add_subparsers(dest='command',required=True)
-    im=sub.add_parser('import');im.add_argument('zip');im.add_argument('library');im.add_argument('--kind',choices=['robot','field'],required=True);im.add_argument('--reuse');im.add_argument('--fresh',action='store_true')
+    im=sub.add_parser('import');im.add_argument('zip');im.add_argument('library');im.add_argument('--kind',choices=['robot','field'],required=True);im.add_argument('--reuse');im.add_argument('--fresh',action='store_true');im.add_argument('--max-expanded-mib',type=int,default=1024,help='Expanded ZIP budget in MiB; default 1024, at most 2048')
     for name in ['capture-robot','capture-field']:
         s=sub.add_parser(name);s.add_argument('source');s.add_argument('library')
     s=sub.add_parser('compile');s.add_argument('profile')
@@ -897,7 +921,7 @@ def main():
     s=sub.add_parser('export');s.add_argument('profile');s.add_argument('destination')
     s=sub.add_parser('import-profile');s.add_argument('bundle');s.add_argument('library')
     args=a.parse_args()
-    if args.command=='import':result=import_zip(args.zip,args.library,args.kind,args.reuse,args.fresh)
+    if args.command=='import':result=import_zip(args.zip,args.library,args.kind,args.reuse,args.fresh,args.max_expanded_mib*1024*1024)
     elif args.command.startswith('capture-'):result=capture(args.source,args.library,args.command[8:])
     elif args.command=='compile':result=compile_profile(args.profile)
     elif args.command=='units':change_units(args.profile,args.unit);result=args.profile

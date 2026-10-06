@@ -17,6 +17,37 @@ class ModelPreparationTest(unittest.TestCase):
     def load(self,kind='robot',reuse=None):return m.import_zip(self.package,self.library,kind,reuse)
     def ready(self,path):
         r=m.compile_profile(path);m.atomic_json(path.parent/'validation.json',{'valid':True,'effective_digest':r['effective_digest']});return m.save_revision(path,self.library,True)
+    def test_visual_origin_correction_preserves_joint_hierarchy_and_survives_bundle(self):
+        xml=URDF.replace('<link name="ball"><visual>','<link name="ball"><visual><origin xyz="1 2 3"/>')
+        self.zip(xml);p=self.load();data=m.read(p)
+        correction={'visual_index':0,'xyz_m':[.1,.2,.3],'rpy_rad':[0.,0.,.5]}
+        data['entities']['ball']['settings']['visual_origin_overrides']=[correction]
+        data['entities']['ball']['settings']['collision_strategy']='visual'
+        m.atomic_json(p,data);saved=self.ready(p);root=m.xml(saved.parent/'prepared/robot.urdf')
+        self.assertEqual([.1,.2,.3],m.origin(root.find("link[@name='ball']/visual"))['xyz'])
+        self.assertEqual([.1,.2,.3],m.origin(root.find("link[@name='ball']/collision"))['xyz'])
+        self.assertEqual([0.,0.,.06],m.origin(root.find("joint[@name='ball_mount']"))['xyz'])
+        self.assertEqual([1.,2.,3.],m.origin(m.xml(saved.parent/'source/model.urdf').find("link[@name='ball']/visual"))['xyz'])
+        bundle=self.root/'origins.zip';m.export_bundle(saved,bundle);restored=m.import_bundle(bundle,self.root/'portable')
+        self.assertEqual([correction],m.read(restored)['entities']['ball']['settings']['visual_origin_overrides'])
+        for bad in [{'visual_index':1,'xyz_m':[0,0,0],'rpy_rad':[0,0,0]},{'visual_index':True,'xyz_m':[0,0,0],'rpy_rad':[0,0,0]},{'visual_index':float('inf'),'xyz_m':[0,0,0],'rpy_rad':[0,0,0]},{'visual_index':0,'xyz_m':[float('nan'),0,0],'rpy_rad':[0,0,0]}]:
+            invalid=m.read(p);invalid['entities']['ball']['settings']['visual_origin_overrides']=[bad]
+            with self.assertRaises(ValueError):m.validate(invalid)
+
+    def test_changed_cad_visual_pose_requires_selectable_correction_migration(self):
+        xml=URDF.replace('<link name="ball"><visual>','<link name="ball"><visual><origin xyz="1 2 3"/>')
+        self.zip(xml);p=self.load();data=m.read(p);data['entities']['ball']['settings']['visual_origin_overrides']=[{'visual_index':0,'xyz_m':[.1,.2,.3],'rpy_rad':[0.,0.,0.]}]
+        m.atomic_json(p,data);saved=self.ready(p)
+        self.zip(xml.replace('xyz="1 2 3"','xyz="1 2 4"'));changed=self.load(reuse=saved)
+        pending=m.read(changed)['migration']['pending'];item=next(x for x in pending if x.get('visual_origin_link'))
+        self.assertEqual(['Keep saved visual origin corrections','Use new CAD visual origins'],item['options'])
+        m.resolve_migration(changed,pending.index(item),'Keep saved visual origin corrections')
+        self.assertEqual(data['entities']['ball']['settings']['visual_origin_overrides'],m.read(changed)['entities']['ball']['settings']['visual_origin_overrides'])
+        self.assertFalse(m.verify_receipt(changed)['ready'])
+        changed=self.load(reuse=saved);pending=m.read(changed)['migration']['pending'];item=next(x for x in pending if x.get('visual_origin_link'))
+        m.resolve_migration(changed,pending.index(item),'Use new CAD visual origins');settings=m.read(changed)['entities']['ball']['settings']
+        self.assertEqual([],settings['visual_origin_overrides']);self.assertEqual('visual',settings['collision_strategy']);self.assertFalse(m.verify_receipt(changed)['ready'])
+
     def test_sensors_and_field_behavior_survive_bundle_and_changed_cad_review(self):
         p=self.load();data=m.read(p)
         data['runtime']['sensors']=[{'name':'range','type':'distance','link':'base','xyz_m':[.1,0,.1],'update_hz':30,'latency_ms':50,'noise_std_m':.002,'seed':7}]
