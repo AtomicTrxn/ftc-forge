@@ -171,20 +171,32 @@ def planar_hulls(triangles):
             for pid, p in polys.items() for n in [normals[pid]]]
 
 
-def extract(source, dest):
+# Full FTC assemblies can exceed 400 MB uncompressed. Keep an explicit finite budget.
+MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
+
+
+def extract(source, dest, max_bytes=MAX_ARCHIVE_BYTES):
     with zipfile.ZipFile(source) as z:
+        if not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or not 0 < max_bytes <= 2 * MAX_ARCHIVE_BYTES:
+            raise ValueError('Import byte budget must be positive and at most 2 GiB')
         infos = z.infolist()
-        if len(infos) > 2000 or sum(i.file_size for i in infos) > 400_000_000:
+        if len(infos) > 2000 or sum(i.file_size for i in infos) > max_bytes:
             raise ValueError('Archive exceeds import budget')
         for i in infos:
             p = PurePosixPath(i.filename)
             if p.is_absolute() or '..' in p.parts or '\\' in i.filename or (i.external_attr >> 16) & 0o170000 == 0o120000:
                 raise ValueError('Unsafe archive entry')
+        expanded = 0
         for i in infos:
             if i.is_dir(): continue
             target = dest / i.filename
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(z.read(i))
+            with z.open(i) as source_file, target.open('wb') as output:
+                while chunk := source_file.read(1024 * 1024):
+                    expanded += len(chunk)
+                    if expanded > max_bytes:
+                        raise ValueError('Archive exceeds import budget during extraction')
+                    output.write(chunk)
 
 
 def category(filename):
