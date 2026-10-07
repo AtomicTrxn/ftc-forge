@@ -52,6 +52,11 @@ public class OdometryTracker {
         if (origin == null) origin = view();
     }
 
+    /** Blocks the caller for the configured bus time; call outside any lock the physics thread needs. */
+    public void payReadCost() { BusCost.block(readCostMs()); }
+
+    private synchronized double readCostMs() { return params.readCostMs; }
+
     private double gaussian(double std) { return std == 0 ? 0 : random.nextGaussian() * std; }
 
     /** The sample the device would report now: the latest, or one interpolated {@code latencyMs} ago. */

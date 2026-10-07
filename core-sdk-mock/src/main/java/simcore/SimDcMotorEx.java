@@ -46,13 +46,14 @@ public class SimDcMotorEx implements DcMotorEx {
     private boolean powerCut;
     private SimVoltageSensor hub;
     private long currentLatencyMs;
+    private long velocityWindowMs;
     private InterpolatedSensorBuffer currentBuffer = new InterpolatedSensorBuffer(1000);
     private double lastKnownCurrentAmps;
 
     private final Map<RunMode, PIDFCoefficients> pidf = new EnumMap<>(RunMode.class);
     // Position and velocity come from one simulated bulk read, so they share one latency.
-    private InterpolatedSensorBuffer tickBuffer = new InterpolatedSensorBuffer(200);
-    private InterpolatedSensorBuffer velocityBuffer = new InterpolatedSensorBuffer(200);
+    private InterpolatedSensorBuffer tickBuffer = new InterpolatedSensorBuffer(500);
+    private InterpolatedSensorBuffer velocityBuffer = new InterpolatedSensorBuffer(500);
     private int lastKnownTicks = 0;
     private double lastKnownVelocityTicksPerS = 0;
 
@@ -91,6 +92,12 @@ public class SimDcMotorEx implements DcMotorEx {
     public synchronized void setEncoderLatencyMs(long ms) {
         if (ms < 0) throw new IllegalArgumentException("Encoder latency must be nonnegative");
         this.encoderLatencyMs = ms;
+    }
+
+    /** Velocity estimation window; 0 reports the instantaneous shaft speed, larger values difference whole encoder counts. */
+    public synchronized void setVelocityWindowMs(long ms) {
+        if (ms < 0) throw new IllegalArgumentException("Velocity window must be nonnegative");
+        velocityWindowMs = ms;
     }
 
     public synchronized long getEncoderLatencyMs() { return encoderLatencyMs; }
@@ -136,8 +143,16 @@ public class SimDcMotorEx implements DcMotorEx {
         velocityBuffer.push(simTimeMs, trueVelocityTicksPerS());
         double delayedTicks = tickBuffer.read(simTimeMs, encoderLatencyMs);
         if (!Double.isNaN(delayedTicks)) lastKnownTicks = (int) Math.round(delayedTicks);
-        double delayedVelocity = velocityBuffer.read(simTimeMs, encoderLatencyMs);
-        if (!Double.isNaN(delayedVelocity)) lastKnownVelocityTicksPerS = delayedVelocity;
+        if (velocityWindowMs > 0) {
+            // The hub derives velocity from integer encoder counts over a window, so it is quantized and smoothed.
+            double newer = tickBuffer.read(simTimeMs, encoderLatencyMs);
+            double older = tickBuffer.read(simTimeMs, encoderLatencyMs + velocityWindowMs);
+            if (!Double.isNaN(newer) && !Double.isNaN(older))
+                lastKnownVelocityTicksPerS = (Math.round(newer) - Math.round(older)) * 1000.0 / velocityWindowMs;
+        } else {
+            double delayedVelocity = velocityBuffer.read(simTimeMs, encoderLatencyMs);
+            if (!Double.isNaN(delayedVelocity)) lastKnownVelocityTicksPerS = delayedVelocity;
+        }
     }
 
     /** Bind a real physics joint: the motor model supplies effort, Bullet supplies motion. */
@@ -253,8 +268,8 @@ public class SimDcMotorEx implements DcMotorEx {
     }
 
     private void resetEncoderHistory() {
-        tickBuffer = new InterpolatedSensorBuffer(200);
-        velocityBuffer = new InterpolatedSensorBuffer(200);
+        tickBuffer = new InterpolatedSensorBuffer(500);
+        velocityBuffer = new InterpolatedSensorBuffer(500);
         lastKnownVelocityTicksPerS = 0;
     }
 

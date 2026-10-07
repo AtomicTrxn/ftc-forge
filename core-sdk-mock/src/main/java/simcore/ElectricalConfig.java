@@ -15,12 +15,13 @@ import java.util.Set;
  *
  * <pre>
  * "battery": {internal_voltage_v, internal_resistance_ohm, capacity_mah, initial_charge_fraction,
- *             empty_voltage_v, curve_shape, brownout_voltage_v, brownout_hold_s, brownout_recovery_voltage_v},
+ *             empty_voltage_v, curve_shape, empty_resistance_ohm, brownout_voltage_v, brownout_hold_s, brownout_recovery_voltage_v},
  * "loads":   {hub_baseline_a, servo_hold_a, servo_active_a, servo_active_duration_ms},
  * "encoder_latency_ms": n,
- * "bus":     {voltage_latency_ms, current_latency_ms, read_cost_ms},
+ * "bus":     {voltage_latency_ms, current_latency_ms, read_cost_ms, velocity_window_ms},
+ * "imu":     {yaw_scale_error, yaw_drift_rad_s, gyro_bias_rad_s, gyro_noise_rad_s, angle_noise_rad, seed, read_cost_ms},
  * "odometry": {latency_ms, linear_scale_error, heading_scale_error, heading_drift_rad_s,
- *              position_noise_m, heading_noise_rad, seed},
+ *              position_noise_m, heading_noise_rad, seed, read_cost_ms},
  * "motor_defaults": {rotor_inertia_kg_m2, static_friction_nm, viscous_friction_nm_s_per_rad,
  *                    thermal_threshold_fraction, thermal_time_constant_s, thermal_max_derate,
  *                    velocity_p_gain, position_p_gain},
@@ -34,6 +35,7 @@ public final class ElectricalConfig {
     public double initialChargeFraction = 1.0;
     public double emptyVoltageV = 10.5;
     public double curveShape = 1.0;
+    public double emptyResistanceOhm = -1;         // -1: resistance does not rise as the pack drains
     public double brownoutVoltageV = 0;
     public double brownoutHoldS = 2.0;
     public double brownoutRecoveryVoltageV = -1;   // -1: brownout voltage + 0.5
@@ -48,17 +50,21 @@ public final class ElectricalConfig {
     public long currentLatencyMs = 0;
     public double readCostMs = 0;
 
+    public long velocityWindowMs = 0;
+    public ImuParams imu = ImuParams.IDEAL;
     public OdometryParams odometry = OdometryParams.IDEAL;
     public MotorTuning motorDefaults = MotorTuning.NONE;
     public final Map<String, MotorTuning> motorOverrides = new LinkedHashMap<>();
 
     private static final Set<String> BATTERY_KEYS = Set.of("internal_voltage_v", "internal_resistance_ohm", "capacity_mah",
-        "initial_charge_fraction", "empty_voltage_v", "curve_shape", "brownout_voltage_v", "brownout_hold_s",
+        "initial_charge_fraction", "empty_voltage_v", "curve_shape", "empty_resistance_ohm", "brownout_voltage_v", "brownout_hold_s",
         "brownout_recovery_voltage_v");
     private static final Set<String> LOAD_KEYS = Set.of("hub_baseline_a", "servo_hold_a", "servo_active_a", "servo_active_duration_ms");
-    private static final Set<String> BUS_KEYS = Set.of("voltage_latency_ms", "current_latency_ms", "read_cost_ms");
+    private static final Set<String> BUS_KEYS = Set.of("voltage_latency_ms", "current_latency_ms", "read_cost_ms", "velocity_window_ms");
+    private static final Set<String> IMU_KEYS = Set.of("yaw_scale_error", "yaw_drift_rad_s", "gyro_bias_rad_s", "gyro_noise_rad_s",
+        "angle_noise_rad", "seed", "read_cost_ms");
     private static final Set<String> ODOMETRY_KEYS = Set.of("latency_ms", "linear_scale_error", "heading_scale_error",
-        "heading_drift_rad_s", "position_noise_m", "heading_noise_rad", "seed");
+        "heading_drift_rad_s", "position_noise_m", "heading_noise_rad", "seed", "read_cost_ms");
     private static final Set<String> MOTOR_KEYS = Set.of("rotor_inertia_kg_m2", "static_friction_nm", "viscous_friction_nm_s_per_rad",
         "thermal_threshold_fraction", "thermal_time_constant_s", "thermal_max_derate", "velocity_p_gain", "position_p_gain");
 
@@ -72,6 +78,7 @@ public final class ElectricalConfig {
         c.initialChargeFraction = num(battery, "initial_charge_fraction", c.initialChargeFraction, 0, 1);
         c.emptyVoltageV = num(battery, "empty_voltage_v", c.emptyVoltageV, 0, 18);
         c.curveShape = num(battery, "curve_shape", c.curveShape, 0.1, 10);
+        c.emptyResistanceOhm = num(battery, "empty_resistance_ohm", c.emptyResistanceOhm, -1, 2);
         c.brownoutVoltageV = num(battery, "brownout_voltage_v", c.brownoutVoltageV, 0, 18);
         c.brownoutHoldS = num(battery, "brownout_hold_s", c.brownoutHoldS, 0, 60);
         c.brownoutRecoveryVoltageV = num(battery, "brownout_recovery_voltage_v", c.brownoutRecoveryVoltageV, -1, 18);
@@ -87,6 +94,16 @@ public final class ElectricalConfig {
         c.voltageLatencyMs = (long) num(bus, "voltage_latency_ms", c.voltageLatencyMs, 0, 200);
         c.currentLatencyMs = (long) num(bus, "current_latency_ms", c.currentLatencyMs, 0, 200);
         c.readCostMs = num(bus, "read_cost_ms", c.readCostMs, 0, 50);
+        c.velocityWindowMs = (long) num(bus, "velocity_window_ms", c.velocityWindowMs, 0, 200);
+
+        Map<String, Object> imu = block(root, "imu", IMU_KEYS);
+        if (!imu.isEmpty()) {
+            double imuSeed = num(imu, "seed", 0, -1e9, 1e9);
+            if (imuSeed != (long) imuSeed) throw new IllegalArgumentException("imu seed must be an integer");
+            c.imu = new ImuParams(num(imu, "yaw_scale_error", 0, -0.5, 0.5), num(imu, "yaw_drift_rad_s", 0, -0.1, 0.1),
+                num(imu, "gyro_bias_rad_s", 0, -0.5, 0.5), num(imu, "gyro_noise_rad_s", 0, 0, 0.5),
+                num(imu, "angle_noise_rad", 0, 0, 0.1), (long) imuSeed, num(imu, "read_cost_ms", 0, 0, 50));
+        }
 
         Map<String, Object> odo = block(root, "odometry", ODOMETRY_KEYS);
         if (!odo.isEmpty()) {
@@ -95,7 +112,7 @@ public final class ElectricalConfig {
             c.odometry = new OdometryParams((long) num(odo, "latency_ms", 0, 0, 200),
                 num(odo, "linear_scale_error", 0, -0.5, 0.5), num(odo, "heading_scale_error", 0, -0.5, 0.5),
                 num(odo, "heading_drift_rad_s", 0, -0.1, 0.1), num(odo, "position_noise_m", 0, 0, 0.05),
-                num(odo, "heading_noise_rad", 0, 0, 0.1), (long) seed);
+                num(odo, "heading_noise_rad", 0, 0, 0.1), (long) seed, num(odo, "read_cost_ms", 0, 0, 50));
         }
 
         Map<String, Object> defaults = block(root, "motor_defaults", MOTOR_KEYS);
@@ -129,6 +146,7 @@ public final class ElectricalConfig {
         pack.capacityAh = batteryCapacityMah / 1000.0;
         pack.emptyVoltageV = emptyVoltageV;
         pack.shape = curveShape;
+        pack.emptyResistanceOhm = emptyResistanceOhm;
         pack.brownoutV = brownoutVoltageV;
         pack.brownoutHoldS = brownoutHoldS;
         pack.brownoutRecoveryV = brownoutRecoveryVoltageV >= 0 ? brownoutRecoveryVoltageV : brownoutVoltageV + 0.5;
@@ -142,6 +160,7 @@ public final class ElectricalConfig {
         for (var motor : map.getAll(SimDcMotorEx.class)) {
             motor.setEncoderLatencyMs(encoderLatencyMs);
             motor.setCurrentLatencyMs(currentLatencyMs);
+            motor.setVelocityWindowMs(velocityWindowMs);
             MotorTuning own = motorOverrides.get(motor.getDeviceName());
             motor.applyTuning(own == null ? motorDefaults : own.over(motorDefaults));
         }
@@ -150,6 +169,9 @@ public final class ElectricalConfig {
                 throw new IllegalArgumentException("motor_overrides names an unknown motor: " + name);
         }
         for (var device : map.getAll(com.qualcomm.robotcore.hardware.HardwareDevice.class)) {
+            if (device instanceof SimIMU simImu) {
+                simImu.configureErrors(imu, map.getNamesOf(device).stream().findFirst().orElse("imu"));
+            }
             if (device instanceof PoseSink sink) {
                 String name = map.getNamesOf(device).stream().findFirst().orElse("odometry");
                 sink.configureOdometry(odometry, name);

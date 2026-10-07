@@ -44,13 +44,18 @@ public class BatteryModel {
      * {@code -R * I_extra} to the numerator: V = Vint - R * (I_motors + I_extra).
      */
     public double solveBatteryVoltage(List<MotorState> motors, double extraLoadAmps, double openCircuitV) {
+        return solveBatteryVoltage(motors, extraLoadAmps, openCircuitV, rBattery);
+    }
+
+    /** As above with an explicit internal resistance (a draining pack's resistance rises). */
+    public double solveBatteryVoltage(List<MotorState> motors, double extraLoadAmps, double openCircuitV, double resistance) {
         double a = 0.0;
         double b = 0.0;
         for (MotorState m : motors) {
             a += m.power * m.power * m.spec.iStallAmps / m.spec.vNominal;
             b += m.power * m.spec.iStallAmps * (m.omega / m.spec.omegaNoLoadRadS);
         }
-        return (openCircuitV + rBattery * (b - extraLoadAmps)) / (1 + rBattery * a);
+        return (openCircuitV + resistance * (b - extraLoadAmps)) / (1 + resistance * a);
     }
 
     /** Total motor-side battery current at a solved terminal voltage: {@code V*A - B} (R4's derivation). */

@@ -20,17 +20,26 @@ public final class OdometryParams {
     public final double headingNoiseRad;
     /** Seed so noisy runs repeat; each device mixes in its own name. */
     public final long seed;
+    /** Time each pose read or update blocks the caller, modelling the I2C round trip. */
+    public final double readCostMs;
 
-    public static final OdometryParams IDEAL = new OdometryParams(0, 0, 0, 0, 0, 0, 0);
+    public static final OdometryParams IDEAL = new OdometryParams(0, 0, 0, 0, 0, 0, 0, 0);
 
     public OdometryParams(long latencyMs, double linearScaleError, double headingScaleError,
                           double headingDriftRadS, double positionNoiseM, double headingNoiseRad, long seed) {
+        this(latencyMs, linearScaleError, headingScaleError, headingDriftRadS, positionNoiseM, headingNoiseRad, seed, 0);
+    }
+
+    public OdometryParams(long latencyMs, double linearScaleError, double headingScaleError,
+                          double headingDriftRadS, double positionNoiseM, double headingNoiseRad, long seed, double readCostMs) {
         if (latencyMs < 0 || latencyMs > 200) throw new IllegalArgumentException("odometry latency_ms must be 0..200");
         if (!(Math.abs(linearScaleError) <= 0.5)) throw new IllegalArgumentException("linear_scale_error must be within +/-0.5");
         if (!(Math.abs(headingScaleError) <= 0.5)) throw new IllegalArgumentException("heading_scale_error must be within +/-0.5");
         if (!(Math.abs(headingDriftRadS) <= 0.1)) throw new IllegalArgumentException("heading_drift_rad_s must be within +/-0.1");
         if (!(positionNoiseM >= 0 && positionNoiseM <= 0.05)) throw new IllegalArgumentException("position_noise_m must be 0..0.05");
         if (!(headingNoiseRad >= 0 && headingNoiseRad <= 0.1)) throw new IllegalArgumentException("heading_noise_rad must be 0..0.1");
+        if (!(readCostMs >= 0 && readCostMs <= 50)) throw new IllegalArgumentException("odometry read_cost_ms must be 0..50");
+        this.readCostMs = readCostMs;
         this.latencyMs = latencyMs;
         this.linearScaleError = linearScaleError;
         this.headingScaleError = headingScaleError;

@@ -51,4 +51,18 @@ class BatteryPackTest {
         assertEquals(12.6 - 0.15 * 2.0, model.solveBatteryVoltage(List.of(), 2.0, 12.6), 1e-12);
         assertEquals(11.0, model.solveBatteryVoltage(List.of(), 0.0, 11.0), 1e-12);
     }
+
+    @Test void resistanceRisesLinearlyWithDepletionOnlyWhenConfigured() {
+        BatteryPack pack = new BatteryPack();
+        pack.capacityAh = 3;
+        assertEquals(0.15, pack.resistanceOhm(0.15));           // no empty value: unchanged
+        pack.emptyResistanceOhm = 0.55;
+        assertEquals(0.15, pack.resistanceOhm(0.15), 1e-12);    // full
+        pack.setChargeFraction(0.5);
+        assertEquals(0.35, pack.resistanceOhm(0.15), 1e-12);
+        pack.setChargeFraction(0);
+        assertEquals(0.55, pack.resistanceOhm(0.15), 1e-12);
+        pack.capacityAh = 0;
+        assertEquals(0.15, pack.resistanceOhm(0.15), 1e-12);    // tracking off
+    }
 }

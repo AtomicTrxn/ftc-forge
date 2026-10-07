@@ -95,6 +95,11 @@ public class SparkFunOTOS implements HardwareDevice, PoseSink {
     public void setOffset(Pose2D pose) { offset = pose; }
 
     public Pose2D getPosition() {
+        tracker.payReadCost();
+        return position();
+    }
+
+    private Pose2D position() {
         OdometryTracker.Pose p = tracker.pose();
         return out(p.x(), p.y(), p.heading(), angularScalar);
     }
@@ -103,6 +108,11 @@ public class SparkFunOTOS implements HardwareDevice, PoseSink {
             angularUnit.toRadians(pose.h)));
     }
     public Pose2D getVelocity() {
+        tracker.payReadCost();
+        return velocity();
+    }
+
+    private Pose2D velocity() {
         OdometryTracker.Pose v = tracker.velocity();
         return out(v.x(), v.y(), v.heading(), 1.0);
     }
@@ -112,7 +122,8 @@ public class SparkFunOTOS implements HardwareDevice, PoseSink {
     public Pose2D getAccelerationStdDev() { return new Pose2D(); }
 
     public void getPosVelAcc(Pose2D pos, Pose2D vel, Pose2D acc) {
-        pos.set(getPosition()); vel.set(getVelocity()); acc.set(getAcceleration());
+        tracker.payReadCost();                       // one bus transaction for the whole block
+        pos.set(position()); vel.set(velocity()); acc.set(getAcceleration());
     }
     public void getPosVelAccStdDev(Pose2D pos, Pose2D vel, Pose2D acc) {
         pos.set(getPositionStdDev()); vel.set(getVelocityStdDev()); acc.set(getAccelerationStdDev());

@@ -123,7 +123,8 @@ public class HardwareMapBuilder {
             m.setPowerCut(brownedOut);
             states.add(new BatteryModel.MotorState(m.signedCommandedPower(), m.getSpec(), m.getOmegaRadS()));
         }
-        double batteryVoltage = BATTERY.solveBatteryVoltage(states, extraLoadAmps, openCircuit);
+        double resistance = PACK.resistanceOhm(BATTERY.rBattery);
+        double batteryVoltage = BATTERY.solveBatteryVoltage(states, extraLoadAmps, openCircuit, resistance);
 
         for (SimDcMotorEx m : motors) {
             m.integrate(batteryVoltage, dtSeconds, timeMs);
@@ -142,6 +143,7 @@ public class HardwareMapBuilder {
         PACK.brownoutV = 0;
         PACK.brownoutHoldS = 2.0;
         PACK.brownoutRecoveryV = 0;
+        PACK.emptyResistanceOhm = -1;
         PACK.setChargeFraction(1.0);
     }
 

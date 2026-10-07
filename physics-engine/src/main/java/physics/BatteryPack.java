@@ -21,6 +21,12 @@ public class BatteryPack {
     /** Open-circuit voltage the pack must recover to before motors return after the hold. */
     public double brownoutRecoveryV = 0;
 
+    /**
+     * Internal resistance when the pack is empty; the resistance rises linearly from the base value
+     * at full charge. Negative means "same as the base value" (no rise). Only used with charge tracking.
+     */
+    public double emptyResistanceOhm = -1;
+
     private double charge = 1.0;
     private boolean brownedOut;
     private double brownoutStartS;
@@ -38,6 +44,12 @@ public class BatteryPack {
         if (capacityAh <= 0) return fullV;
         double empty = Math.min(emptyVoltageV, fullV);
         return empty + (fullV - empty) * Math.pow(charge, shape);
+    }
+
+    /** Internal resistance at the current charge: {@code baseOhm} when tracking is off or no empty value is set. */
+    public synchronized double resistanceOhm(double baseOhm) {
+        if (capacityAh <= 0 || emptyResistanceOhm < 0) return baseOhm;
+        return baseOhm + (emptyResistanceOhm - baseOhm) * (1 - charge);
     }
 
     /** Draws {@code currentA} (battery side) for {@code dtS}. */

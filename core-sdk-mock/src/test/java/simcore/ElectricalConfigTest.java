@@ -64,6 +64,20 @@ class ElectricalConfigTest {
         assertEquals(0.3, c.motorOverrides.get("left").staticFrictionNm());
     }
 
+    @Test void sensorErrorBlocksParseAndRejectBadValues() {
+        ElectricalConfig c = parse("{\"imu\":{\"yaw_scale_error\":0.01,\"yaw_drift_rad_s\":0.0001,\"gyro_bias_rad_s\":0.001,"
+            + "\"gyro_noise_rad_s\":0.002,\"angle_noise_rad\":0.001,\"seed\":3,\"read_cost_ms\":2},"
+            + "\"bus\":{\"velocity_window_ms\":50},\"odometry\":{\"read_cost_ms\":1.5},\"battery\":{\"empty_resistance_ohm\":0.4}}");
+        assertEquals(0.01, c.imu.yawScaleError);
+        assertEquals(2, c.imu.readCostMs);
+        assertEquals(50, c.velocityWindowMs);
+        assertEquals(1.5, c.odometry.readCostMs);
+        assertEquals(0.4, c.emptyResistanceOhm);
+        for (String bad : List.of("{\"imu\":{\"bias\":1}}", "{\"imu\":{\"gyro_noise_rad_s\":5}}", "{\"imu\":{\"seed\":0.5}}",
+                "{\"bus\":{\"velocity_window_ms\":500}}", "{\"odometry\":{\"read_cost_ms\":99}}", "{\"battery\":{\"empty_resistance_ohm\":9}}"))
+            assertThrows(IllegalArgumentException.class, () -> parse(bad), bad);
+    }
+
     @Test void unknownKeysBadTypesAndOutOfRangeValuesAreRejected() {
         for (String bad : List.of(
                 "{\"battery\":{\"capacity\":1}}", "{\"loads\":{\"x\":1}}", "{\"bus\":{\"y\":1}}", "{\"odometry\":{\"z\":1}}",

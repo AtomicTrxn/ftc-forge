@@ -43,6 +43,7 @@ public class GoBildaPinpointDriver implements HardwareDevice, PoseSink {
 
     /** Latches the newest simulated pose, like reading the device registers. */
     public void update() {
+        tracker.payReadCost();
         pose = tracker.pose();
         velocity = tracker.velocity();
         long now = System.nanoTime();
