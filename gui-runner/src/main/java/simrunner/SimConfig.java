@@ -43,9 +43,23 @@ public class SimConfig {
     public Double totalMassKg;
     public int vhacdMaxHulls = 8;
     public long imuLatencyMs = 8;
+    public long encoderLatencyMs = simcore.SimDcMotorEx.DEFAULT_ENCODER_LATENCY_MS;
+    public double batteryInternalVoltageV = 12.6;
+    public double batteryInternalResistanceOhm = 0.15;
     public final List<String> extraClasspath = new ArrayList<>();
     public final Map<String, ServoModel.Spec> servoPhysics = new LinkedHashMap<>();
     public final Map<String,String> collisionOmissions = new LinkedHashMap<>();
+
+    /**
+     * Applies the electrical and bus settings to a freshly built hardware map. Call before loading a
+     * calibration profile: measured battery values from a profile take precedence over these.
+     */
+    public void applyElectrical(com.qualcomm.robotcore.hardware.HardwareMap map) {
+        var battery = simcore.HardwareMapBuilder.getBatteryModel();
+        battery.vInternal = batteryInternalVoltageV;
+        battery.rBattery = batteryInternalResistanceOhm;
+        for (var motor : map.getAll(simcore.SimDcMotorEx.class)) motor.setEncoderLatencyMs(encoderLatencyMs);
+    }
 
     @SuppressWarnings("unchecked")
     public static SimConfig load(Path projectRoot) throws IOException {
@@ -100,6 +114,23 @@ public class SimConfig {
             throw new IllegalArgumentException("Total robot mass must be positive and finite.");
         if (root.containsKey("vhacd_max_hulls")) config.vhacdMaxHulls = ((Number) root.get("vhacd_max_hulls")).intValue();
         if (root.containsKey("imu_latency_ms")) config.imuLatencyMs = ((Number) root.get("imu_latency_ms")).longValue();
+        if (root.containsKey("encoder_latency_ms")) config.encoderLatencyMs = ((Number) root.get("encoder_latency_ms")).longValue();
+        if (root.get("battery") instanceof Map<?, ?> battery) {
+            Map<String, Object> values = (Map<String, Object>) battery;
+            for (String key : values.keySet())
+                if (!key.equals("internal_voltage_v") && !key.equals("internal_resistance_ohm"))
+                    throw new IllegalArgumentException("Unknown battery setting: " + key);
+            if (values.containsKey("internal_voltage_v")) config.batteryInternalVoltageV = ((Number) values.get("internal_voltage_v")).doubleValue();
+            if (values.containsKey("internal_resistance_ohm")) config.batteryInternalResistanceOhm = ((Number) values.get("internal_resistance_ohm")).doubleValue();
+        } else if (root.containsKey("battery")) {
+            throw new IllegalArgumentException("battery must be an object with internal_voltage_v and/or internal_resistance_ohm");
+        }
+        if (config.encoderLatencyMs < 0 || config.encoderLatencyMs > 200)
+            throw new IllegalArgumentException("encoder_latency_ms must be between 0 and 200");
+        if (!(config.batteryInternalVoltageV >= 6 && config.batteryInternalVoltageV <= 18))
+            throw new IllegalArgumentException("battery.internal_voltage_v must be between 6 and 18");
+        if (!(config.batteryInternalResistanceOhm >= 0 && config.batteryInternalResistanceOhm <= 2))
+            throw new IllegalArgumentException("battery.internal_resistance_ohm must be between 0 and 2");
         if (config.vhacdMaxHulls < 1 || config.vhacdMaxHulls > 16)
             throw new IllegalArgumentException("vhacd_max_hulls must be between 1 and 16");
         if (config.imuLatencyMs < 0 || config.imuLatencyMs > 200)

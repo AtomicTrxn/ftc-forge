@@ -4,7 +4,7 @@ import com.qualcomm.robotcore.hardware.*;
 import org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit;
 import physics.MotorModel;
 import physics.MotorSpec;
-import physics.SensorRingBuffer;
+import physics.InterpolatedSensorBuffer;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -15,13 +15,14 @@ import java.util.Map;
  *
  * Unbound motors use a placeholder rotor/load inertia. Imported articulated mechanisms
  * instead receive actual shaft motion from Bullet and supply electrical torque to the joint.
- * Encoder ticks are read through a SensorRingBuffer to model I2C read latency (R4's
+ * Encoder position and velocity are read through an InterpolatedSensorBuffer to model I2C read latency (R4's
  * reassessment: cheap enough to ship in Phase 3 rather than deferring further).
  */
 public class SimDcMotorEx implements DcMotorEx {
 
     public static final double ROTATIONAL_INERTIA_KG_M2 = 0.0015; // placeholder; see class javadoc
-    public static long encoderLatencyMs = 8; // per R4's 7-10ms I2C default
+    public static final long DEFAULT_ENCODER_LATENCY_MS = 8; // per R4's 7-10ms I2C default
+    private long encoderLatencyMs = DEFAULT_ENCODER_LATENCY_MS;
 
     private final String name;
     private final MotorSpec spec;
@@ -43,8 +44,11 @@ public class SimDcMotorEx implements DcMotorEx {
     private double batteryVoltage = 12;
 
     private final Map<RunMode, PIDFCoefficients> pidf = new EnumMap<>(RunMode.class);
-    private SensorRingBuffer<Integer> tickBuffer = new SensorRingBuffer<>(200);
+    // Position and velocity come from one simulated bulk read, so they share one latency.
+    private InterpolatedSensorBuffer tickBuffer = new InterpolatedSensorBuffer(200);
+    private InterpolatedSensorBuffer velocityBuffer = new InterpolatedSensorBuffer(200);
     private int lastKnownTicks = 0;
+    private double lastKnownVelocityTicksPerS = 0;
 
     public SimDcMotorEx(String name, MotorSpec spec) {
         this.name = name;
@@ -77,6 +81,13 @@ public class SimDcMotorEx implements DcMotorEx {
         }
     }
 
+    public synchronized void setEncoderLatencyMs(long ms) {
+        if (ms < 0) throw new IllegalArgumentException("Encoder latency must be nonnegative");
+        this.encoderLatencyMs = ms;
+    }
+
+    public synchronized long getEncoderLatencyMs() { return encoderLatencyMs; }
+
     public synchronized void configureFriction(double staticTorqueNm, double viscousBNmS) {
         if (!Double.isFinite(staticTorqueNm) || staticTorqueNm < 0
             || !Double.isFinite(viscousBNmS) || viscousBNmS < 0)
@@ -108,9 +119,12 @@ public class SimDcMotorEx implements DcMotorEx {
             currentPositionTicks = shaftTicks() - encoderZeroTicks;
         }
 
-        tickBuffer.push(simTimeMs, (int) Math.round(currentPositionTicks));
-        Integer delayed = tickBuffer.read(simTimeMs, encoderLatencyMs);
-        if (delayed != null) lastKnownTicks = delayed;
+        tickBuffer.push(simTimeMs, currentPositionTicks);
+        velocityBuffer.push(simTimeMs, trueVelocityTicksPerS());
+        double delayedTicks = tickBuffer.read(simTimeMs, encoderLatencyMs);
+        if (!Double.isNaN(delayedTicks)) lastKnownTicks = (int) Math.round(delayedTicks);
+        double delayedVelocity = velocityBuffer.read(simTimeMs, encoderLatencyMs);
+        if (!Double.isNaN(delayedVelocity)) lastKnownVelocityTicksPerS = delayedVelocity;
     }
 
     /** Bind a real physics joint: the motor model supplies effort, Bullet supplies motion. */
@@ -150,7 +164,7 @@ public class SimDcMotorEx implements DcMotorEx {
             encoderZeroTicks = -encoderZeroTicks;
             currentPositionTicks = -currentPositionTicks;
             lastKnownTicks = -lastKnownTicks;
-            tickBuffer = new SensorRingBuffer<>(200);
+            resetEncoderHistory();
         }
         this.direction = d;
     }
@@ -167,7 +181,7 @@ public class SimDcMotorEx implements DcMotorEx {
             currentPositionTicks = 0;
             if (!externallyDriven) omegaRadS = 0;
             lastKnownTicks = 0;
-            tickBuffer = new SensorRingBuffer<>(200);
+            resetEncoderHistory();
         }
     }
     @Override public synchronized RunMode getMode() { return mode; }
@@ -183,8 +197,18 @@ public class SimDcMotorEx implements DcMotorEx {
     @Override public synchronized void setVelocity(double angularRate) {
         this.targetVelocityFraction = angularRate / spec.omegaNoLoadRadS;
     }
-    @Override public synchronized double getVelocity() { return (omegaRadS / (2 * Math.PI)) * spec.encoderCountsPerRev
-        * (direction == Direction.REVERSE ? -1 : 1); }
+    private double trueVelocityTicksPerS() {
+        return (omegaRadS / (2 * Math.PI)) * spec.encoderCountsPerRev * (direction == Direction.REVERSE ? -1 : 1);
+    }
+
+    private void resetEncoderHistory() {
+        tickBuffer = new InterpolatedSensorBuffer(200);
+        velocityBuffer = new InterpolatedSensorBuffer(200);
+        lastKnownVelocityTicksPerS = 0;
+    }
+
+    /** Like the hub's bulk read, velocity is as old as the encoder position, not the instantaneous value. */
+    @Override public synchronized double getVelocity() { return lastKnownVelocityTicksPerS; }
     @Override public synchronized void setPIDFCoefficients(RunMode m, PIDFCoefficients p) { pidf.put(m, p); }
     @Override public synchronized PIDFCoefficients getPIDFCoefficients(RunMode m) { return pidf.get(m); }
     @Override public synchronized double getCurrent(CurrentUnit unit) { return unit.fromAmps(Math.abs(lastCurrentAmps)); }
