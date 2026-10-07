@@ -36,6 +36,7 @@ final class HeadlessScene implements AutoCloseable {
         try {
             hardware = HardwareMapBuilder.build(RobotConfigXml.parse(project.resolve(config.robotConfig).toFile()),
                 PresetRobotConfig.load(project.resolve(config.presetMotors)));
+            config.applyElectrical(hardware);
             if (config.calibration != null) {
                 var calibration = CalibrationProfile.load(project.resolve(config.calibration));
                 calibration.applyHardware(hardware); calibration.applyDrive(world);
@@ -169,7 +170,7 @@ final class HeadlessScene implements AutoCloseable {
         var pose = world.getChassisRotation(); var omega = world.getChassisAngularVelocity();
         for (var imu : hardware.getAll(SimIMU.class)) RobotOrientation.update(imu, pose, omega, Math.round(seconds * 1000));
         var heading = pose.mult(Vector3f.UNIT_X); var at = world.getChassisPosition(); var v = world.chassisBody().getLinearVelocity();
-        if (odometry) for (var sink : hardware.getAll(PoseSink.class)) sink.onChassisPose(at.x, -at.z,
+        if (odometry) for (var sink : hardware.getAll(PoseSink.class)) sink.onChassisPose(Math.round(seconds * 1000), at.x, -at.z,
             Math.atan2(-heading.z, heading.x), v.x, -v.z, omega.y);
     }
 

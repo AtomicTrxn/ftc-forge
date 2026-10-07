@@ -5,6 +5,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
 import org.firstinspires.ftc.robotcore.external.navigation.UnnormalizedAngleUnit;
+import simcore.OdometryParams;
 import simcore.OdometryTracker;
 import simcore.PoseSink;
 
@@ -32,8 +33,12 @@ public class GoBildaPinpointDriver implements HardwareDevice, PoseSink {
 
     public GoBildaPinpointDriver(String name) { this.name = name; }
 
-    @Override public void onChassisPose(double x, double y, double yaw, double vx, double vy, double w) {
-        tracker.sample(x, y, yaw, vx, vy, w);
+    @Override public void onChassisPose(long simTimeMs, double x, double y, double yaw, double vx, double vy, double w) {
+        tracker.sample(simTimeMs, x, y, yaw, vx, vy, w);
+    }
+
+    @Override public void configureOdometry(OdometryParams params, String deviceName) {
+        tracker.configure(params, deviceName);
     }
 
     /** Latches the newest simulated pose, like reading the device registers. */

@@ -2,9 +2,12 @@ package simcore;
 
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import physics.BatteryModel;
+import physics.BatteryPack;
 import physics.MotorSpec;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
 
 /** Combines a parsed robot-config XML (device names/ports) with a preset (motor SKU/ratio) into a live HardwareMap. */
@@ -12,6 +15,9 @@ public class HardwareMapBuilder {
 
     // Shared battery model + clock state for the whole robot -- one battery, one clock, per R4.
     private static final BatteryModel BATTERY = new BatteryModel(12.6, 0.15); // per R4's revised default
+    private static final BatteryPack PACK = new BatteryPack();
+    private static double hubBaselineA, servoHoldA, servoActiveA;
+    private static long servoActiveMs = 300;
     private static long lastTickNanos = 0;
     private static long simTimeMs = 0;
 
@@ -19,9 +25,13 @@ public class HardwareMapBuilder {
         // A new run starts from defaults; an optional calibration profile is applied afterward.
         BATTERY.vInternal = 12.6;
         BATTERY.rBattery = 0.15;
+        resetPack();
+        configureLoads(0, 0, 0, 300);
         lastTickNanos = 0;
         simTimeMs = 0;
         HardwareMap map = new HardwareMap();
+        Map<String, SimVoltageSensor> hubs = new LinkedHashMap<>();
+        for (String hubName : xml.hubNames) hubs.put(hubName, new SimVoltageSensor(hubName));
         for (RobotConfigXml.DeviceEntry entry : xml.devices) {
             RobotConfigXml.DeviceType type = RobotConfigXml.resolveType(entry.tag);
             switch (type) {
@@ -32,7 +42,10 @@ public class HardwareMapBuilder {
                         System.out.println("[WARN] No preset motor spec for \"" + entry.name
                             + "\" -- using a generic placeholder. Add it to the preset's motors block.");
                     }
-                    map.register(entry.name, new SimDcMotorEx(entry.name, spec));
+                    SimDcMotorEx motor = new SimDcMotorEx(entry.name, spec);
+                    SimVoltageSensor hub = hubs.get(entry.hub);
+                    if (hub != null) motor.attachHub(hub);
+                    map.register(entry.name, motor);
                     break;
                 }
                 case SERVO:
@@ -68,9 +81,7 @@ public class HardwareMapBuilder {
             }
         }
         // Per R3: each hub is itself registered as a VoltageSensor.
-        for (String hubName : xml.hubNames) {
-            map.register(hubName, new SimVoltageSensor(hubName));
-        }
+        for (var hub : hubs.entrySet()) map.register(hub.getKey(), hub.getValue());
         return map;
     }
 
@@ -100,19 +111,49 @@ public class HardwareMapBuilder {
         }
         if (motors.isEmpty() || dtSeconds <= 0) return;
 
+        boolean brownedOut = PACK.isBrownedOut();
+        double openCircuit = PACK.openCircuitV(BATTERY.vInternal);
+        double extraLoadAmps = hubBaselineA;
+        for (var device : map.getAll(com.qualcomm.robotcore.hardware.HardwareDevice.class)) {
+            if (device instanceof ServoLoad servo) extraLoadAmps += servo.drawAmps(timeMs, servoHoldA, servoActiveA, servoActiveMs);
+        }
+
         List<BatteryModel.MotorState> states = new ArrayList<>();
         for (SimDcMotorEx m : motors) {
+            m.setPowerCut(brownedOut);
             states.add(new BatteryModel.MotorState(m.signedCommandedPower(), m.getSpec(), m.getOmegaRadS()));
         }
-        double batteryVoltage = BATTERY.solveBatteryVoltage(states);
+        double batteryVoltage = BATTERY.solveBatteryVoltage(states, extraLoadAmps, openCircuit);
 
         for (SimDcMotorEx m : motors) {
             m.integrate(batteryVoltage, dtSeconds, timeMs);
         }
+        PACK.consume(BATTERY.batteryCurrent(states, batteryVoltage) + extraLoadAmps, dtSeconds);
+        PACK.updateBrownout(batteryVoltage, openCircuit, timeMs / 1000.0);
         for (var v : map.getAll(SimVoltageSensor.class)) {
-            v.setVoltage(batteryVoltage);
+            v.publishVoltage(timeMs, batteryVoltage);
         }
     }
+
+    private static void resetPack() {
+        PACK.capacityAh = 0;
+        PACK.emptyVoltageV = 10.5;
+        PACK.shape = 1.0;
+        PACK.brownoutV = 0;
+        PACK.brownoutHoldS = 2.0;
+        PACK.brownoutRecoveryV = 0;
+        PACK.setChargeFraction(1.0);
+    }
+
+    /** Non-motor battery current: a constant hub draw plus per-servo hold and active currents. */
+    static synchronized void configureLoads(double hubBaseline, double servoHold, double servoActive, long activeMs) {
+        hubBaselineA = hubBaseline;
+        servoHoldA = servoHold;
+        servoActiveA = servoActive;
+        servoActiveMs = activeMs;
+    }
+
+    public static BatteryPack getBatteryPack() { return PACK; }
 
     public static BatteryModel getBatteryModel() { return BATTERY; }
 }

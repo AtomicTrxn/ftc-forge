@@ -20,7 +20,7 @@ import java.util.Map;
  */
 public class SimDcMotorEx implements DcMotorEx {
 
-    public static final double ROTATIONAL_INERTIA_KG_M2 = 0.0015; // placeholder; see class javadoc
+    public static final double ROTATIONAL_INERTIA_KG_M2 = 0.0015; // placeholder default; see class javadoc and MotorTuning
     public static final long DEFAULT_ENCODER_LATENCY_MS = 8; // per R4's 7-10ms I2C default
     private long encoderLatencyMs = DEFAULT_ENCODER_LATENCY_MS;
 
@@ -42,6 +42,12 @@ public class SimDcMotorEx implements DcMotorEx {
     private double externalShaftRadians;
     private double encoderZeroTicks;
     private double batteryVoltage = 12;
+    private double rotorInertiaKgM2 = ROTATIONAL_INERTIA_KG_M2;
+    private boolean powerCut;
+    private SimVoltageSensor hub;
+    private long currentLatencyMs;
+    private InterpolatedSensorBuffer currentBuffer = new InterpolatedSensorBuffer(1000);
+    private double lastKnownCurrentAmps;
 
     private final Map<RunMode, PIDFCoefficients> pidf = new EnumMap<>(RunMode.class);
     // Position and velocity come from one simulated bulk read, so they share one latency.
@@ -59,6 +65,7 @@ public class SimDcMotorEx implements DcMotorEx {
 
     /** Pure function of current state -- safe to call twice per tick (see HardwareMapBuilder). */
     public synchronized double commandedPower() {
+        if (powerCut) return 0;
         double logicalOmega = direction == Direction.REVERSE ? -omegaRadS : omegaRadS;
         switch (mode) {
             case STOP_AND_RESET_ENCODER: return 0;
@@ -106,12 +113,15 @@ public class SimDcMotorEx implements DcMotorEx {
         double signedPower = direction == Direction.FORWARD ? commandedPower() : -commandedPower();
         double vActual = signedPower * batteryVoltage;
 
-        double tau = motorModel.torque(spec, omegaRadS, vActual);
-        double alpha = tau / ROTATIONAL_INERTIA_KG_M2;
+        // A floating motor (FLOAT at zero power, or the driver cut off in a brownout) has no electrical
+        // torque, so only friction slows it; BRAKE shorts the windings and adds back-EMF braking.
+        boolean floating = signedPower == 0 && (zeroPowerBehavior == ZeroPowerBehavior.FLOAT || powerCut);
+        double tau = floating ? -motorModel.frictionTorque(omegaRadS) : motorModel.torque(spec, omegaRadS, vActual);
+        double alpha = tau / rotorInertiaKgM2;
         if (!externallyDriven) omegaRadS += alpha * dtSeconds;
 
-        lastCurrentAmps = externallyDriven && (mode == RunMode.STOP_AND_RESET_ENCODER ||
-            (signedPower == 0 && zeroPowerBehavior == ZeroPowerBehavior.FLOAT)) ? 0 : motorModel.current(spec, omegaRadS, vActual);
+        lastCurrentAmps = floating || (externallyDriven && mode == RunMode.STOP_AND_RESET_ENCODER)
+            ? 0 : motorModel.current(spec, omegaRadS, vActual);
         motorModel.tickThermal(spec, lastCurrentAmps, dtSeconds);
 
         if (!externallyDriven) {
@@ -119,6 +129,9 @@ public class SimDcMotorEx implements DcMotorEx {
             currentPositionTicks = shaftTicks() - encoderZeroTicks;
         }
 
+        currentBuffer.push(simTimeMs, Math.abs(lastCurrentAmps));
+        double delayedCurrent = currentLatencyMs == 0 ? Double.NaN : currentBuffer.read(simTimeMs, currentLatencyMs);
+        lastKnownCurrentAmps = Double.isNaN(delayedCurrent) ? Math.abs(lastCurrentAmps) : delayedCurrent;
         tickBuffer.push(simTimeMs, currentPositionTicks);
         velocityBuffer.push(simTimeMs, trueVelocityTicksPerS());
         double delayedTicks = tickBuffer.read(simTimeMs, encoderLatencyMs);
@@ -146,14 +159,14 @@ public class SimDcMotorEx implements DcMotorEx {
     public synchronized double externalShaftTorque() {
         if (mode == RunMode.STOP_AND_RESET_ENCODER) return 0;
         double command = commandedPower();
-        if (command == 0 && zeroPowerBehavior == ZeroPowerBehavior.FLOAT) return 0;
+        if (command == 0 && (zeroPowerBehavior == ZeroPowerBehavior.FLOAT || powerCut)) return 0;
         double voltage = command * batteryVoltage * (direction == Direction.FORWARD ? 1 : -1);
         return motorModel.torque(spec, omegaRadS, voltage);
     }
 
     public synchronized double externalTorqueDamping() {
         if (mode == RunMode.STOP_AND_RESET_ENCODER ||
-            (commandedPower() == 0 && zeroPowerBehavior == ZeroPowerBehavior.FLOAT)) return 0;
+            (commandedPower() == 0 && (zeroPowerBehavior == ZeroPowerBehavior.FLOAT || powerCut))) return 0;
         return spec.tauStallNm / spec.omegaNoLoadRadS;
     }
 
@@ -187,11 +200,49 @@ public class SimDcMotorEx implements DcMotorEx {
     @Override public synchronized RunMode getMode() { return mode; }
     @Override public synchronized void setZeroPowerBehavior(ZeroPowerBehavior b) { this.zeroPowerBehavior = b; }
     @Override public synchronized ZeroPowerBehavior getZeroPowerBehavior() { return zeroPowerBehavior; }
-    @Override public synchronized int getCurrentPosition() { return lastKnownTicks; } // per R4: reads latency-delayed value, not the true instantaneous one
+    /** Latency-delayed encoder state as of now; what a bus read returns. */
+    public record Reading(int ticks, double velocityTicksPerS) { }
+
+    synchronized Reading liveReading() { return new Reading(lastKnownTicks, lastKnownVelocityTicksPerS); }
+
+    public synchronized void attachHub(SimVoltageSensor hub) { this.hub = hub; hub.attach(this); }
+
+    /** Battery brownout: the driver is off, so the motor floats with no electrical torque or current. */
+    public synchronized void setPowerCut(boolean cut) { this.powerCut = cut; }
+    public synchronized boolean isPowerCut() { return powerCut; }
+
+    public synchronized void setCurrentLatencyMs(long ms) {
+        if (ms < 0) throw new IllegalArgumentException("Current latency must be nonnegative");
+        currentLatencyMs = ms;
+    }
+
+    /** Applies configured overrides; null fields keep the current value. */
+    public synchronized void applyTuning(MotorTuning t) {
+        if (t.rotorInertiaKgM2() != null) rotorInertiaKgM2 = t.rotorInertiaKgM2();
+        if (t.staticFrictionNm() != null || t.viscousFrictionNmSPerRad() != null)
+            configureFriction(t.staticFrictionNm() != null ? t.staticFrictionNm() : motorModel.tauStaticNm,
+                t.viscousFrictionNmSPerRad() != null ? t.viscousFrictionNmSPerRad() : motorModel.viscousBNms);
+        if (t.thermalThresholdFraction() != null) motorModel.thermalThresholdAmps = t.thermalThresholdFraction();
+        if (t.thermalTimeConstantS() != null) motorModel.thermalTimeConstantS = t.thermalTimeConstantS();
+        if (t.thermalMaxDerate() != null) motorModel.thermalMaxDerate = t.thermalMaxDerate();
+        if (t.velocityPGain() != null) {
+            var c = pidf.get(RunMode.RUN_USING_ENCODER);
+            pidf.put(RunMode.RUN_USING_ENCODER, new PIDFCoefficients(t.velocityPGain(), c.i, c.d, c.f));
+        }
+        if (t.positionPGain() != null) {
+            var c = pidf.get(RunMode.RUN_TO_POSITION);
+            pidf.put(RunMode.RUN_TO_POSITION, new PIDFCoefficients(t.positionPGain(), c.i, c.d, c.f));
+        }
+    }
+
+    public synchronized double getRotorInertiaKgM2() { return rotorInertiaKgM2; }
+
+    // Not synchronized on the motor: the hub takes its own lock first and then reads this motor's state.
+    @Override public int getCurrentPosition() { return hub == null ? liveReading().ticks() : hub.read(this, SimVoltageSensor.Kind.POSITION).ticks(); }
     @Override public synchronized void setTargetPosition(int position) { this.targetPosition = position; }
     @Override public synchronized int getTargetPosition() { return targetPosition; }
-    @Override public synchronized boolean isBusy() {
-        return mode == RunMode.RUN_TO_POSITION && Math.abs(getCurrentPosition() - targetPosition) > 5;
+    @Override public boolean isBusy() {
+        return getMode() == RunMode.RUN_TO_POSITION && Math.abs(getCurrentPosition() - getTargetPosition()) > 5;
     }
 
     @Override public synchronized void setVelocity(double angularRate) {
@@ -208,10 +259,10 @@ public class SimDcMotorEx implements DcMotorEx {
     }
 
     /** Like the hub's bulk read, velocity is as old as the encoder position, not the instantaneous value. */
-    @Override public synchronized double getVelocity() { return lastKnownVelocityTicksPerS; }
+    @Override public double getVelocity() { return hub == null ? liveReading().velocityTicksPerS() : hub.read(this, SimVoltageSensor.Kind.VELOCITY).velocityTicksPerS(); }
     @Override public synchronized void setPIDFCoefficients(RunMode m, PIDFCoefficients p) { pidf.put(m, p); }
     @Override public synchronized PIDFCoefficients getPIDFCoefficients(RunMode m) { return pidf.get(m); }
-    @Override public synchronized double getCurrent(CurrentUnit unit) { return unit.fromAmps(Math.abs(lastCurrentAmps)); }
+    @Override public synchronized double getCurrent(CurrentUnit unit) { return unit.fromAmps(lastKnownCurrentAmps); }
     @Override public synchronized void setCurrentAlert(double current, CurrentUnit unit) { }
 
     @Override public synchronized String getDeviceName() { return name; }

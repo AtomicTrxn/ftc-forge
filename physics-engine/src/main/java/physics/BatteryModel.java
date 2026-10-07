@@ -35,12 +35,32 @@ public class BatteryModel {
     }
 
     public double solveBatteryVoltage(List<MotorState> motors) {
+        return solveBatteryVoltage(motors, 0.0, vInternal);
+    }
+
+    /**
+     * Same solve with constant non-motor battery current (hub, servos) and an explicit open-circuit
+     * voltage (so a draining pack can supply its present voltage). The extra current adds
+     * {@code -R * I_extra} to the numerator: V = Vint - R * (I_motors + I_extra).
+     */
+    public double solveBatteryVoltage(List<MotorState> motors, double extraLoadAmps, double openCircuitV) {
         double a = 0.0;
         double b = 0.0;
         for (MotorState m : motors) {
             a += m.power * m.power * m.spec.iStallAmps / m.spec.vNominal;
             b += m.power * m.spec.iStallAmps * (m.omega / m.spec.omegaNoLoadRadS);
         }
-        return (vInternal + rBattery * b) / (1 + rBattery * a);
+        return (openCircuitV + rBattery * (b - extraLoadAmps)) / (1 + rBattery * a);
+    }
+
+    /** Total motor-side battery current at a solved terminal voltage: {@code V*A - B} (R4's derivation). */
+    public double batteryCurrent(List<MotorState> motors, double terminalVoltage) {
+        double a = 0.0;
+        double b = 0.0;
+        for (MotorState m : motors) {
+            a += m.power * m.power * m.spec.iStallAmps / m.spec.vNominal;
+            b += m.power * m.spec.iStallAmps * (m.omega / m.spec.omegaNoLoadRadS);
+        }
+        return terminalVoltage * a - b;
     }
 }

@@ -27,10 +27,14 @@ public class RobotConfigXml {
         public final String tag;
         public final String name;
         public final String port;
-        public DeviceEntry(String tag, String name, String port) {
+        /** Name of the hub (LynxModule) this device is wired to; empty when unknown. */
+        public final String hub;
+        public DeviceEntry(String tag, String name, String port) { this(tag, name, port, ""); }
+        public DeviceEntry(String tag, String name, String port, String hub) {
             this.tag = tag;
             this.name = name;
             this.port = port;
+            this.hub = hub;
         }
     }
 
@@ -54,7 +58,7 @@ public class RobotConfigXml {
                 Node node = children.item(j);
                 if (node.getNodeType() != Node.ELEMENT_NODE) continue;
                 Element el = (Element) node;
-                config.devices.add(new DeviceEntry(el.getTagName(), el.getAttribute("name"), el.getAttribute("port")));
+                config.devices.add(new DeviceEntry(el.getTagName(), el.getAttribute("name"), el.getAttribute("port"), hub.getAttribute("name")));
             }
         }
         NodeList cameras=doc.getElementsByTagName("Webcam");

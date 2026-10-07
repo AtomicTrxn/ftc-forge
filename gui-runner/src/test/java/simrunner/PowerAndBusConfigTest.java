@@ -122,4 +122,18 @@ class PowerAndBusConfigTest {
             assertThrows(IllegalArgumentException.class, () -> SimConfig.load(team), bad);
         }
     }
+
+    @Test void newPowerBusAndMotorSettingsFlowFromSimConfigToTheHardware() throws Exception {
+        HardwareMap map = build("{\"bus\":{\"current_latency_ms\":7},\"motor_defaults\":{\"rotor_inertia_kg_m2\":0.02},"
+            + "\"motor_overrides\":{\"left_front_drive\":{\"rotor_inertia_kg_m2\":0.04}},"
+            + "\"battery\":{\"capacity_mah\":3000,\"brownout_voltage_v\":7},\"odometry\":{\"latency_ms\":5}}");
+        assertEquals(0.04, map.get(SimDcMotorEx.class, "left_front_drive").getRotorInertiaKgM2());
+        assertEquals(0.02, map.get(SimDcMotorEx.class, "right_front_drive").getRotorInertiaKgM2());
+        assertEquals(3.0, HardwareMapBuilder.getBatteryPack().capacityAh, 1e-12);
+        assertEquals(7.5, HardwareMapBuilder.getBatteryPack().brownoutRecoveryV, 1e-12);
+    }
+
+    @Test void overridingAnUnconfiguredMotorFailsWhenApplied() throws Exception {
+        assertThrows(IllegalArgumentException.class, () -> build("{\"motor_overrides\":{\"no_such_motor\":{\"static_friction_nm\":0.1}}}"));
+    }
 }

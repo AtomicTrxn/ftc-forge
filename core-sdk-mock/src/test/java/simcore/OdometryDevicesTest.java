@@ -56,7 +56,8 @@ class OdometryDevicesTest {
     @Test void pinpointHeadingWrapsToHalfTurn() {
         GoBildaPinpointDriver pinpoint = new GoBildaPinpointDriver("pinpoint");
         pinpoint.onChassisPose(0, 0, 0, 0, 0, 0);
-        pinpoint.onChassisPose(0, 0, Math.toRadians(190), 0, 0, 0);
+        pinpoint.onChassisPose(0, 0, Math.toRadians(95), 0, 0, 0);      // real yaw arrives wrapped, one small step at a time
+        pinpoint.onChassisPose(0, 0, Math.toRadians(-170), 0, 0, 0);
         pinpoint.update();
         assertEquals(-170, pinpoint.getHeading(AngleUnit.DEGREES), 1e-9);
         assertEquals(190, pinpoint.getHeading(org.firstinspires.ftc.robotcore.external.navigation.UnnormalizedAngleUnit.DEGREES), 1e-9);

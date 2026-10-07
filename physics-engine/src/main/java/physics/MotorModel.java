@@ -37,6 +37,11 @@ public class MotorModel {
         return idealTorque * derate - friction;
     }
 
+    /** Mechanical friction opposing motion (the same term {@link #torque} subtracts). */
+    public double frictionTorque(double omega) {
+        return Math.signum(omega) * tauStaticNm + viscousBNms * omega;
+    }
+
     public double current(MotorSpec spec, double omega, double vActual) {
         return spec.iStallAmps * (vActual / spec.vNominal - omega / spec.omegaNoLoadRadS);
     }
