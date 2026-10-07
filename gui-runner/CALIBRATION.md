@@ -78,7 +78,7 @@ spread after alignment, so they include any unmodeled error. The depletion stage
 capacity you give; its full voltage includes any constant hub or servo load, because that current is not in the log.
 
 **Not fitted** (the recording has no reference for them): encoder, voltage and current latency, bus read cost, loads,
-brownout threshold, thermal derating, and seeds. Set those by hand. The closed-loop tests in `CalibrationPassTest` run
+brownout threshold, motor and pack thermal parameters (no temperature column in the log), and seeds. Set those by hand. The closed-loop tests in `CalibrationPassTest` run
 the simulator with known parameters, record a log, fit it and check the values come back; that validates the fitting
 code only. No real robot recording is included, so agreement with hardware is unmeasured.
 

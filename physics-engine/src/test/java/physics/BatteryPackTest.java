@@ -65,4 +65,31 @@ class BatteryPackTest {
         pack.capacityAh = 0;
         assertEquals(0.15, pack.resistanceOhm(0.15), 1e-12);    // tracking off
     }
+
+    @Test void coldPackHasHigherResistanceAndDefaultsChangeNothing() {
+        BatteryPack pack = new BatteryPack();
+        pack.ambientC = 0;
+        assertEquals(0.15, pack.resistanceOhm(0.15), 1e-12, "no coefficient: temperature has no effect");
+        pack.resistanceTempCoeffPerK = 0.01;
+        assertEquals(0.15 * 1.25, pack.resistanceOhm(0.15), 1e-12);
+        pack.ambientC = 25;
+        assertEquals(0.15, pack.resistanceOhm(0.15), 1e-12);
+        pack.ambientC = 100;
+        assertEquals(0.15 * 0.3, pack.resistanceOhm(0.15), 1e-12, "floored at 30% of the base value");
+    }
+
+    @Test void selfHeatingFollowsTheFirstOrderCurveAndCoolsBack() {
+        BatteryPack pack = new BatteryPack();
+        pack.thermalCapacityJPerK = 100;
+        pack.thermalResistanceKPerW = 2;
+        double steady = 25 + 10 * 10 * 0.2 * 2;
+        pack.heat(10, 0.2, 50);
+        assertEquals(steady + (25 - steady) * Math.exp(-50 / 200.0), pack.temperatureC(), 1e-9);
+        for (int i = 0; i < 1000; i++) pack.heat(0, 0.2, 10);
+        assertEquals(25, pack.temperatureC(), 1e-6);
+        pack.thermalCapacityJPerK = 0;
+        pack.resetTemperature();
+        pack.heat(50, 1, 100);
+        assertEquals(25, pack.temperatureC(), "no heat capacity configured: temperature stays at ambient");
+    }
 }

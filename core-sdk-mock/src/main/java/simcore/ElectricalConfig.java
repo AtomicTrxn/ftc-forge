@@ -35,6 +35,12 @@ public final class ElectricalConfig {
     public double initialChargeFraction = 1.0;
     public double emptyVoltageV = 10.5;
     public double curveShape = 1.0;
+    public double packThermalCapacityJPerK = 0;
+    public double packThermalResistanceKPerW = 2.0;
+    public double packAmbientC = 25.0;
+    public double packReferenceC = 25.0;
+    public double packResistanceTempCoeffPerK = 0;
+    public Double packInitialTemperatureC = null;
     public double emptyResistanceOhm = -1;         // -1: resistance does not rise as the pack drains
     public double brownoutVoltageV = 0;
     public double brownoutHoldS = 2.0;
@@ -52,6 +58,7 @@ public final class ElectricalConfig {
     public double readCostMs = 0;
 
     public long velocityWindowMs = 0;
+    public double sensorReadCostMs = 0;
     public ImuParams imu = ImuParams.IDEAL;
     public OdometryParams odometry = OdometryParams.IDEAL;
     public MotorTuning motorDefaults = MotorTuning.NONE;
@@ -62,16 +69,19 @@ public final class ElectricalConfig {
         "odometry", "motor_defaults", "motor_overrides");
 
     private static final Set<String> BATTERY_KEYS = Set.of("internal_voltage_v", "internal_resistance_ohm", "capacity_mah",
-        "initial_charge_fraction", "empty_voltage_v", "curve_shape", "empty_resistance_ohm", "brownout_voltage_v", "brownout_hold_s",
+        "initial_charge_fraction", "empty_voltage_v", "curve_shape", "empty_resistance_ohm", "thermal_capacity_j_per_k",
+        "thermal_resistance_k_per_w", "ambient_c", "reference_c", "resistance_temp_coeff_per_k", "initial_temperature_c", "brownout_voltage_v", "brownout_hold_s",
         "brownout_recovery_voltage_v");
     private static final Set<String> LOAD_KEYS = Set.of("hub_baseline_a", "servo_hold_a", "servo_active_a", "servo_active_duration_ms");
-    private static final Set<String> BUS_KEYS = Set.of("voltage_latency_ms", "current_latency_ms", "read_cost_ms", "velocity_window_ms");
+    private static final Set<String> BUS_KEYS = Set.of("voltage_latency_ms", "current_latency_ms", "read_cost_ms", "velocity_window_ms", "sensor_read_cost_ms");
     private static final Set<String> IMU_KEYS = Set.of("yaw_scale_error", "yaw_drift_rad_s", "gyro_bias_rad_s", "gyro_noise_rad_s",
         "angle_noise_rad", "seed", "read_cost_ms");
     private static final Set<String> ODOMETRY_KEYS = Set.of("latency_ms", "linear_scale_error", "heading_scale_error",
         "heading_drift_rad_s", "position_noise_m", "heading_noise_rad", "seed", "read_cost_ms");
     private static final Set<String> MOTOR_KEYS = Set.of("rotor_inertia_kg_m2", "static_friction_nm", "viscous_friction_nm_s_per_rad",
-        "thermal_threshold_fraction", "thermal_time_constant_s", "thermal_max_derate", "velocity_p_gain", "position_p_gain");
+        "thermal_threshold_fraction", "thermal_time_constant_s", "thermal_max_derate", "velocity_p_gain", "position_p_gain",
+        "thermal_capacity_j_per_k", "thermal_resistance_k_per_w", "ambient_c", "derate_start_c", "derate_full_c",
+        "winding_resistance_ohm", "resistance_tempco_per_k");
 
     @SuppressWarnings("unchecked")
     public static ElectricalConfig parse(Map<String, Object> root) {
@@ -84,6 +94,12 @@ public final class ElectricalConfig {
         c.emptyVoltageV = num(battery, "empty_voltage_v", c.emptyVoltageV, 0, 18);
         c.curveShape = num(battery, "curve_shape", c.curveShape, 0.1, 10);
         c.emptyResistanceOhm = num(battery, "empty_resistance_ohm", c.emptyResistanceOhm, -1, 2);
+        c.packThermalCapacityJPerK = num(battery, "thermal_capacity_j_per_k", c.packThermalCapacityJPerK, 0, 1e6);
+        c.packThermalResistanceKPerW = num(battery, "thermal_resistance_k_per_w", c.packThermalResistanceKPerW, 0.01, 1000);
+        c.packAmbientC = num(battery, "ambient_c", c.packAmbientC, -40, 80);
+        c.packReferenceC = num(battery, "reference_c", c.packReferenceC, -40, 80);
+        c.packResistanceTempCoeffPerK = num(battery, "resistance_temp_coeff_per_k", c.packResistanceTempCoeffPerK, 0, 0.1);
+        if (battery.containsKey("initial_temperature_c")) c.packInitialTemperatureC = num(battery, "initial_temperature_c", 25, -40, 120);
         c.brownoutVoltageV = num(battery, "brownout_voltage_v", c.brownoutVoltageV, 0, 18);
         c.brownoutHoldS = num(battery, "brownout_hold_s", c.brownoutHoldS, 0, 60);
         c.brownoutRecoveryVoltageV = num(battery, "brownout_recovery_voltage_v", c.brownoutRecoveryVoltageV, -1, 18);
@@ -101,6 +117,7 @@ public final class ElectricalConfig {
         c.currentLatencyMs = (long) num(bus, "current_latency_ms", c.currentLatencyMs, 0, 200);
         c.readCostMs = num(bus, "read_cost_ms", c.readCostMs, 0, 50);
         c.velocityWindowMs = (long) num(bus, "velocity_window_ms", c.velocityWindowMs, 0, 200);
+        c.sensorReadCostMs = num(bus, "sensor_read_cost_ms", c.sensorReadCostMs, 0, 50);
 
         Map<String, Object> imu = block(root, "imu", IMU_KEYS);
         if (!imu.isEmpty()) {
@@ -152,6 +169,13 @@ public final class ElectricalConfig {
         pack.capacityAh = batteryCapacityMah / 1000.0;
         pack.emptyVoltageV = emptyVoltageV;
         pack.shape = curveShape;
+        pack.thermalCapacityJPerK = packThermalCapacityJPerK;
+        pack.thermalResistanceKPerW = packThermalResistanceKPerW;
+        pack.ambientC = packAmbientC;
+        pack.referenceC = packReferenceC;
+        pack.resistanceTempCoeffPerK = packResistanceTempCoeffPerK;
+        pack.resetTemperature();
+        if (packInitialTemperatureC != null) pack.setTemperatureC(packInitialTemperatureC);
         pack.emptyResistanceOhm = emptyResistanceOhm;
         pack.brownoutV = brownoutVoltageV;
         pack.brownoutHoldS = brownoutHoldS;
@@ -175,6 +199,8 @@ public final class ElectricalConfig {
                 throw new IllegalArgumentException("motor_overrides names an unknown motor: " + name);
         }
         for (var device : map.getAll(com.qualcomm.robotcore.hardware.HardwareDevice.class)) {
+            if (device instanceof SimDistanceSensor distance) distance.setReadCostMs(sensorReadCostMs);
+            if (device instanceof SimColorSensor color) color.setReadCostMs(sensorReadCostMs);
             if (device instanceof SimIMU simImu) {
                 simImu.setLatencyMs(imuLatencyMs);
                 simImu.configureErrors(imu, map.getNamesOf(device).stream().findFirst().orElse("imu"));
@@ -189,7 +215,9 @@ public final class ElectricalConfig {
     private static MotorTuning motor(Map<String, Object> m) {
         return new MotorTuning(opt(m, "rotor_inertia_kg_m2"), opt(m, "static_friction_nm"), opt(m, "viscous_friction_nm_s_per_rad"),
             opt(m, "thermal_threshold_fraction"), opt(m, "thermal_time_constant_s"), opt(m, "thermal_max_derate"),
-            opt(m, "velocity_p_gain"), opt(m, "position_p_gain"));
+            opt(m, "velocity_p_gain"), opt(m, "position_p_gain"),
+            opt(m, "thermal_capacity_j_per_k"), opt(m, "thermal_resistance_k_per_w"), opt(m, "ambient_c"), opt(m, "derate_start_c"),
+            opt(m, "derate_full_c"), opt(m, "winding_resistance_ohm"), opt(m, "resistance_tempco_per_k"));
     }
 
     private static Double opt(Map<String, Object> m, String key) {

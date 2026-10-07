@@ -27,6 +27,20 @@ public class BatteryPack {
      */
     public double emptyResistanceOhm = -1;
 
+    /** Pack heat capacity, J/K; 0 keeps the temperature at {@link #ambientC} (no self-heating). */
+    public double thermalCapacityJPerK = 0;
+    /** Pack-to-ambient thermal resistance, K/W. */
+    public double thermalResistanceKPerW = 2.0;
+    public double ambientC = 25.0;
+    /** Temperature at which the base resistance applies. */
+    public double referenceC = 25.0;
+    /**
+     * Fractional resistance rise per kelvin below {@link #referenceC} (and fall above it); 0 disables the
+     * temperature effect. Resistance never drops below 30% of the base value. A placeholder, not a measured NiMH curve.
+     */
+    public double resistanceTempCoeffPerK = 0;
+
+    private double temperatureC = Double.NaN;
     private double charge = 1.0;
     private boolean brownedOut;
     private double brownoutStartS;
@@ -46,10 +60,35 @@ public class BatteryPack {
         return empty + (fullV - empty) * Math.pow(charge, shape);
     }
 
-    /** Internal resistance at the current charge: {@code baseOhm} when tracking is off or no empty value is set. */
+    public synchronized double temperatureC() { return Double.isNaN(temperatureC) ? ambientC : temperatureC; }
+
+    public synchronized void setTemperatureC(double celsius) {
+        if (!(celsius > -60 && celsius < 150)) throw new IllegalArgumentException("Pack temperature out of range");
+        temperatureC = celsius;
+    }
+
+    /** Back to the ambient temperature (call after changing it). */
+    public synchronized void resetTemperature() { temperatureC = Double.NaN; }
+
+    /**
+     * Internal resistance now: the base value, rising with depletion when an empty value is set and charge is
+     * tracked, then scaled by pack temperature.
+     */
     public synchronized double resistanceOhm(double baseOhm) {
-        if (capacityAh <= 0 || emptyResistanceOhm < 0) return baseOhm;
-        return baseOhm + (emptyResistanceOhm - baseOhm) * (1 - charge);
+        double ohms = baseOhm;
+        if (capacityAh > 0 && emptyResistanceOhm >= 0) ohms = baseOhm + (emptyResistanceOhm - baseOhm) * (1 - charge);
+        if (resistanceTempCoeffPerK != 0) {
+            ohms *= Math.max(0.3, 1 + resistanceTempCoeffPerK * (referenceC - temperatureC()));
+        }
+        return ohms;
+    }
+
+    /** Heats the pack by {@code I^2 * R} over {@code dtS} and cools it toward ambient (exact first-order step). */
+    public synchronized void heat(double currentA, double resistanceOhm, double dtS) {
+        if (thermalCapacityJPerK <= 0) return;
+        double steady = ambientC + currentA * currentA * resistanceOhm * thermalResistanceKPerW;
+        double tau = thermalResistanceKPerW * thermalCapacityJPerK;
+        temperatureC = steady + (temperatureC() - steady) * Math.exp(-dtS / tau);
     }
 
     /** Draws {@code currentA} (battery side) for {@code dtS}. */

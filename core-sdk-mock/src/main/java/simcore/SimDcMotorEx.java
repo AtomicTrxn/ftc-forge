@@ -240,6 +240,16 @@ public class SimDcMotorEx implements DcMotorEx {
         if (t.thermalThresholdFraction() != null) motorModel.thermalThresholdAmps = t.thermalThresholdFraction();
         if (t.thermalTimeConstantS() != null) motorModel.thermalTimeConstantS = t.thermalTimeConstantS();
         if (t.thermalMaxDerate() != null) motorModel.thermalMaxDerate = t.thermalMaxDerate();
+        if (t.windingCapacityJPerK() != null) motorModel.thermalCapacityJPerK = t.windingCapacityJPerK();
+        if (t.windingResistanceKPerW() != null) motorModel.thermalResistanceKPerW = t.windingResistanceKPerW();
+        if (t.ambientC() != null) motorModel.ambientC = t.ambientC();
+        if (t.derateStartC() != null) motorModel.derateStartC = t.derateStartC();
+        if (t.derateFullC() != null) motorModel.derateFullC = t.derateFullC();
+        if (t.windingResistanceOhm() != null) motorModel.windingResistanceOhm = t.windingResistanceOhm();
+        if (t.resistanceTempcoPerK() != null) motorModel.resistanceTempcoPerK = t.resistanceTempcoPerK();
+        if (motorModel.derateFullC <= motorModel.derateStartC)
+            throw new IllegalArgumentException("derate_full_c must exceed derate_start_c");
+        motorModel.resetThermal();
         if (t.velocityPGain() != null) {
             var c = pidf.get(RunMode.RUN_USING_ENCODER);
             pidf.put(RunMode.RUN_USING_ENCODER, new PIDFCoefficients(t.velocityPGain(), c.i, c.d, c.f));
@@ -249,6 +259,9 @@ public class SimDcMotorEx implements DcMotorEx {
             pidf.put(RunMode.RUN_TO_POSITION, new PIDFCoefficients(t.positionPGain(), c.i, c.d, c.f));
         }
     }
+
+    /** Winding temperature from the thermal model (the ambient when the model is off). */
+    public synchronized double getWindingTempC() { return motorModel.windingTempC(); }
 
     public synchronized double getRotorInertiaKgM2() { return rotorInertiaKgM2; }
 

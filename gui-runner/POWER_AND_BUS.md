@@ -14,10 +14,13 @@ setting by setting, and its measured battery and friction values win.
     "internal_voltage_v": 12.6, "internal_resistance_ohm": 0.15,
     "capacity_mah": 0, "initial_charge_fraction": 1.0, "empty_voltage_v": 10.5, "curve_shape": 1.0,
     "empty_resistance_ohm": -1,
+    "thermal_capacity_j_per_k": 0, "thermal_resistance_k_per_w": 2.0, "ambient_c": 25, "reference_c": 25,
+    "resistance_temp_coeff_per_k": 0,
     "brownout_voltage_v": 0, "brownout_hold_s": 2.0, "brownout_recovery_voltage_v": 0
   },
   "loads": { "hub_baseline_a": 0, "servo_hold_a": 0, "servo_active_a": 0, "servo_active_duration_ms": 300 },
-  "bus": { "voltage_latency_ms": 0, "current_latency_ms": 0, "read_cost_ms": 0, "velocity_window_ms": 0 },
+  "bus": { "voltage_latency_ms": 0, "current_latency_ms": 0, "read_cost_ms": 0, "velocity_window_ms": 0,
+          "sensor_read_cost_ms": 0 },
   "imu": {
     "yaw_scale_error": 0, "yaw_drift_rad_s": 0, "gyro_bias_rad_s": 0, "gyro_noise_rad_s": 0,
     "angle_noise_rad": 0, "seed": 0, "read_cost_ms": 0
@@ -29,7 +32,9 @@ setting by setting, and its measured battery and friction values win.
   "motor_defaults": {
     "rotor_inertia_kg_m2": 0.0015, "static_friction_nm": 0, "viscous_friction_nm_s_per_rad": 0,
     "thermal_threshold_fraction": 0.7, "thermal_time_constant_s": 20, "thermal_max_derate": 0.3,
-    "velocity_p_gain": 1.0, "position_p_gain": 0.01
+    "velocity_p_gain": 1.0, "position_p_gain": 0.01,
+    "thermal_capacity_j_per_k": 0, "thermal_resistance_k_per_w": 6, "ambient_c": 25, "derate_start_c": 80,
+    "derate_full_c": 130, "winding_resistance_ohm": 0, "resistance_tempco_per_k": 0.0039
   },
   "motor_overrides": { "arm_motor": { "viscous_friction_nm_s_per_rad": 0.05 } }
 }
@@ -45,6 +50,10 @@ current: `V = Voc - R * (I_motors + I_loads)`. Motor torque, the hub `VoltageSen
   the voltage constant. The curve shape is a placeholder, not a measured NiMH discharge curve.
 - **Resistance rise** (`empty_resistance_ohm >= 0`, with charge tracking on): internal resistance rises linearly from
   `internal_resistance_ohm` at full charge to this value when empty, so a drained pack sags harder. `-1` keeps it constant.
+- **Pack temperature** (`thermal_capacity_j_per_k > 0` for self-heating): the pack warms by `I^2 R` and cools to `ambient_c`
+  through `thermal_resistance_k_per_w`. `resistance_temp_coeff_per_k > 0` makes resistance rise below `reference_c` and fall
+  above it (never below 30% of the base value), so a cold pack sags harder even with no self-heating (`ambient_c` below
+  `reference_c`). `initial_temperature_c` starts the pack away from ambient. The coefficient is a placeholder, not a NiMH curve.
 - **Brownout** (`brownout_voltage_v > 0`): if the terminal voltage drops below it, the hub resets: motor drivers are cut (the
   motors float and draw no current) for at least `brownout_hold_s` and until the open-circuit voltage is back above
   `brownout_recovery_voltage_v` (default threshold + 0.5 V). OpModes keep running, which a real hub restart would not do.
@@ -75,6 +84,7 @@ current: `V = Voc - R * (I_motors + I_loads)`. Motor torque, the hub `VoltageSen
   and `position_noise_m` / `heading_noise_rad` add zero-mean Gaussian noise per pose update. `seed` makes noisy runs repeat;
   each device mixes in its own name. Latency and drift need the simulator clock, so they apply in the 3D and native-physics
   runs, not in the legacy motor-only headless run.
+- `bus.sensor_read_cost_ms` blocks every distance and color sensor read (each color channel is one read).
 - Scene distance, color, touch and camera sensors have their own `latency_ms`/noise settings in the scene sensor config.
 
 ## Motor placeholders
@@ -85,6 +95,15 @@ beat defaults field by field; a name that is not a configured motor is an error.
 still replaces the gains at run time. **Free-spinning motors draw almost no current once up to speed**, so sustained sag needs
 friction or a physical load; without them the sag is only a spin-up transient.
 
+## Winding thermal model
+
+`thermal_capacity_j_per_k > 0` in `motor_defaults` or a `motor_overrides` entry replaces the old duty-cycle heuristic with a
+winding temperature: copper heats from `I^2 R` (`R` defaults to `vNominal / iStall`, or set `winding_resistance_ohm`), loses
+heat to `ambient_c` through `thermal_resistance_k_per_w`, and a hotter winding has higher resistance, so torque and current fall
+by `1 / (1 + resistance_tempco_per_k * (T - 25))`. Between `derate_start_c` and `derate_full_c` torque is also derated, up to
+`thermal_max_derate`. The step is exact for any tick length. `0` (default) keeps the heuristic. No FTC vendor publishes these
+numbers, so every default is a placeholder; a stalled motor with the placeholders reaches the derate range in tens of seconds.
+
 ## Also fixed here
 
 A motor on `ZeroPowerBehavior.FLOAT` (or with its driver cut by a brownout) used to be braked by its back-EMF as if
@@ -92,6 +111,7 @@ A motor on `ZeroPowerBehavior.FLOAT` (or with its driver cut by a brownout) used
 
 ## Not modeled
 
-Temperature effects on the pack, cell imbalance, regenerative current flowing back into the battery, bus cost for
-distance/color/touch sensors, and real hub brownout behavior. Nothing here is checked against a robot recording: calibrate
+Cell imbalance, temperature-dependent pack capacity, gearbox efficiency and backlash, regeneration limits, bus cost for
+touch sensors, and real hub brownout behavior. Temperature is not logged by the robot recorder, so these thermal values are not
+fitted by the calibration pass. Nothing here is checked against a robot recording: calibrate
 against your hardware before trusting the numbers.

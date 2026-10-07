@@ -129,7 +129,9 @@ public class HardwareMapBuilder {
         for (SimDcMotorEx m : motors) {
             m.integrate(batteryVoltage, dtSeconds, timeMs);
         }
-        PACK.consume(BATTERY.batteryCurrent(states, batteryVoltage) + extraLoadAmps, dtSeconds);
+        double packCurrent = BATTERY.batteryCurrent(states, batteryVoltage) + extraLoadAmps;
+        PACK.consume(packCurrent, dtSeconds);
+        PACK.heat(packCurrent, resistance, dtSeconds);
         PACK.updateBrownout(batteryVoltage, openCircuit, timeMs / 1000.0);
         for (var v : map.getAll(SimVoltageSensor.class)) {
             v.publishVoltage(timeMs, batteryVoltage);
@@ -144,6 +146,12 @@ public class HardwareMapBuilder {
         PACK.brownoutHoldS = 2.0;
         PACK.brownoutRecoveryV = 0;
         PACK.emptyResistanceOhm = -1;
+        PACK.thermalCapacityJPerK = 0;
+        PACK.thermalResistanceKPerW = 2.0;
+        PACK.ambientC = 25.0;
+        PACK.referenceC = 25.0;
+        PACK.resistanceTempCoeffPerK = 0;
+        PACK.resetTemperature();
         PACK.setChargeFraction(1.0);
     }
 
