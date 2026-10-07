@@ -3,7 +3,8 @@
 All of these are plain parameters in `sim.config`, validated on load (unknown keys, wrong types and
 out-of-range values are rejected), so each can be adjusted by hand now and fitted from a recording later.
 **Every default is an estimate, not a measurement**, and the optional models are off until you configure them.
-A [calibration profile](CALIBRATION.md) is applied afterwards, so its measured battery and friction values win.
+A [calibration profile](CALIBRATION.md) can fit many of these from a recording; its `electrical` block overlays this file
+setting by setting, and its measured battery and friction values win.
 
 ```json
 {

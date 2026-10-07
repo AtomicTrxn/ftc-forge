@@ -30,6 +30,8 @@ public class SimIMU implements IMU {
         this.latencyMs = latencyMs;
     }
 
+    public synchronized long getLatencyMs() { return latencyMs; }
+
     /** Sets the error model; call after the hardware map is built. */
     public synchronized void configureErrors(ImuParams params, String deviceName) {
         this.params = params;

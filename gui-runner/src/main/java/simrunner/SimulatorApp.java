@@ -314,15 +314,12 @@ public class SimulatorApp extends SimpleApplication {
         RobotConfigXml xml = RobotConfigXml.parse(projectDir.resolve(simConfig.robotConfig).toFile());
         PresetRobotConfig preset = PresetRobotConfig.load(projectDir.resolve(simConfig.presetMotors));
         hardwareMap = HardwareMapBuilder.build(xml, preset);
-        simConfig.applyElectrical(hardwareMap);
+        simConfig.applyElectrical(hardwareMap, projectDir);
         if (simConfig.calibration != null) {
             CalibrationProfile profile = CalibrationProfile.load(projectDir.resolve(simConfig.calibration));
             profile.applyHardware(hardwareMap);
             profile.applyDrive(physicsWorld);
             System.out.println("[CALIBRATION] Loaded " + simConfig.calibration);
-        }
-        for (IMU imu : hardwareMap.getAll(IMU.class)) {
-            ((SimIMU) imu).setLatencyMs(simConfig.imuLatencyMs);
         }
         motorNames = differential == null ? new String[]{"left_front_drive", "right_front_drive", "left_back_drive", "right_back_drive"}
             : differential.motorNames().toArray(String[]::new);

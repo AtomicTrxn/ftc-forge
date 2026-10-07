@@ -19,12 +19,16 @@ final class CalibrationProfile {
     final double vInternal, rBattery;
     final Map<String, Motor> motors;
     final Drive drive;
+    /** Optional sim.config-style electrical/sensor settings fitted from a recording; overlays sim.config. */
+    final Map<String, Object> electrical;
 
-    private CalibrationProfile(double vInternal, double rBattery, Map<String, Motor> motors, Drive drive) {
+    private CalibrationProfile(double vInternal, double rBattery, Map<String, Motor> motors, Drive drive,
+                               Map<String, Object> electrical) {
         this.vInternal = vInternal;
         this.rBattery = rBattery;
         this.motors = motors;
         this.drive = drive;
+        this.electrical = electrical;
     }
 
     @SuppressWarnings("unchecked")
@@ -46,7 +50,14 @@ final class CalibrationProfile {
         if (values != null) drive = new Drive(number(values, "response_time_s", false),
             number(values, "max_accel_mps2", false), number(values, "yaw_response_time_s", false),
             number(values, "max_yaw_accel_radps2", false));
-        return new CalibrationProfile(v, r, Map.copyOf(motors), drive);
+        Map<String, Object> electrical = Map.of();
+        if (root.get("electrical") instanceof Map<?, ?> fitted) {
+            electrical = (Map<String, Object>) fitted;
+            simcore.ElectricalConfig.parse(electrical);       // reject unknown keys and out-of-range values at load time
+        } else if (root.containsKey("electrical")) {
+            throw new IllegalArgumentException("Calibration electrical block must be an object");
+        }
+        return new CalibrationProfile(v, r, Map.copyOf(motors), drive, electrical);
     }
 
     void applyHardware(HardwareMap map) {

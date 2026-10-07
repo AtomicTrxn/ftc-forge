@@ -34,6 +34,9 @@ public class TelemetryLogReader {
         if (motorNames.isEmpty()) throw new IllegalArgumentException("Telemetry CSV has no motor columns");
         boolean chassis = columns.containsKey("vx_mps") || columns.containsKey("vy_mps") || columns.containsKey("omega_rad_s");
         if (chassis) for (String name : List.of("vx_mps", "vy_mps", "omega_rad_s")) require(columns, name);
+        boolean sensors = false;
+        for (String name : TelemetryLogRow.SensorSample.COLUMNS) sensors |= columns.containsKey(name);
+        if (sensors) for (String name : TelemetryLogRow.SensorSample.COLUMNS) require(columns, name);
         List<TelemetryLogRow> rows = new ArrayList<>();
         long previousTime = -1;
         for (int line = 1; line < lines.size(); line++) {
@@ -73,6 +76,24 @@ public class TelemetryLogReader {
                             throw new IllegalArgumentException("Non-finite chassis velocity");
                     }
                 }
+                if (sensors) {
+                    Double[] cells = new Double[10];
+                    for (int i = 0; i < 10; i++) {
+                        String raw = value(values, columns, TelemetryLogRow.SensorSample.COLUMNS.get(i));
+                        if (raw.isBlank()) continue;
+                        cells[i] = Double.parseDouble(raw);
+                        if (!Double.isFinite(cells[i])) throw new IllegalArgumentException("Non-finite sensor value");
+                    }
+                    pairs(cells[0], cells[1], "imu yaw");
+                    pairs(cells[2], cells[3], "imu rate");
+                    if ((cells[4] == null) != (cells[7] == null) || (cells[5] == null) != (cells[8] == null)
+                        || (cells[6] == null) != (cells[9] == null))
+                        throw new IllegalArgumentException("Each odometry reading needs its reference on the same row");
+                    boolean any = false;
+                    for (Double cell : cells) any |= cell != null;
+                    if (any) row.sensors = new TelemetryLogRow.SensorSample(cells[0], cells[1], cells[2], cells[3],
+                        cells[4], cells[5], cells[6], cells[7], cells[8], cells[9]);
+                }
             } catch (RuntimeException error) {
                 throw new IllegalArgumentException("Invalid telemetry line " + (line + 1) + ": " + error.getMessage(), error);
             }
@@ -80,6 +101,11 @@ public class TelemetryLogReader {
         }
         if (rows.size() < 30) throw new IllegalArgumentException("Need at least 30 telemetry samples");
         return rows;
+    }
+
+    private static void pairs(Double reading, Double reference, String what) {
+        if ((reading == null) != (reference == null))
+            throw new IllegalArgumentException("Each " + what + " reading needs its reference on the same row");
     }
 
     private static void require(Map<String, Integer> columns, String name) {

@@ -36,12 +36,11 @@ final class HeadlessScene implements AutoCloseable {
         try {
             hardware = HardwareMapBuilder.build(RobotConfigXml.parse(project.resolve(config.robotConfig).toFile()),
                 PresetRobotConfig.load(project.resolve(config.presetMotors)));
-            config.applyElectrical(hardware);
+            config.applyElectrical(hardware, project);
             if (config.calibration != null) {
                 var calibration = CalibrationProfile.load(project.resolve(config.calibration));
                 calibration.applyHardware(hardware); calibration.applyDrive(world);
             }
-            for (var imu : hardware.getAll(SimIMU.class)) imu.setLatencyMs(config.imuLatencyMs);
             for (String name : motorNames) hardware.get(SimDcMotorEx.class, name);
             if (config.intake != null) hardware.get(SimDcMotorEx.class, config.intake.motor());
             var environment = new HashSet<Long>();

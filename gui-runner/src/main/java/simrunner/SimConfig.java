@@ -44,16 +44,50 @@ public class SimConfig {
     public int vhacdMaxHulls = 8;
     public long imuLatencyMs = 8;
     public simcore.ElectricalConfig electrical = new simcore.ElectricalConfig();
+    /** The electrical keys exactly as written in sim.config, kept so a calibration profile can overlay them. */
+    private Map<String, Object> electricalSource = Map.of();
+
     public final List<String> extraClasspath = new ArrayList<>();
     public final Map<String, ServoModel.Spec> servoPhysics = new LinkedHashMap<>();
     public final Map<String,String> collisionOmissions = new LinkedHashMap<>();
 
     /**
-     * Applies the electrical and bus settings to a freshly built hardware map. Call before loading a
-     * calibration profile: measured battery values from a profile take precedence over these.
+     * Applies the electrical, bus and sensor-error settings to a freshly built hardware map. Settings in the
+     * calibration profile's {@code electrical} block overlay sim.config's, block by block. Call before the
+     * profile's own battery and friction values are applied: those measured values still win.
+     *
+     * @param projectRoot directory the calibration path is relative to
      */
+    public void applyElectrical(com.qualcomm.robotcore.hardware.HardwareMap map, Path projectRoot) throws IOException {
+        Map<String, Object> merged = new LinkedHashMap<>(electricalSource);
+        if (calibration != null) {
+            CalibrationProfile profile = CalibrationProfile.load(projectRoot.resolve(calibration));
+            for (var entry : profile.electrical.entrySet()) {
+                Object base = merged.get(entry.getKey());
+                if (base instanceof Map<?, ?> baseMap && entry.getValue() instanceof Map<?, ?> overlay)
+                    merged.put(entry.getKey(), deepMerge(castMap(baseMap), castMap(overlay)));
+                else merged.put(entry.getKey(), entry.getValue());
+            }
+        }
+        simcore.ElectricalConfig.parse(merged).apply(map);
+    }
+
+    /** Applies only sim.config's own settings (no calibration profile). */
     public void applyElectrical(com.qualcomm.robotcore.hardware.HardwareMap map) {
         electrical.apply(map);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castMap(Map<?, ?> map) { return (Map<String, Object>) map; }
+
+    private static Map<String, Object> deepMerge(Map<String, Object> base, Map<String, Object> overlay) {
+        Map<String, Object> out = new LinkedHashMap<>(base);
+        for (var entry : overlay.entrySet()) {
+            Object existing = out.get(entry.getKey());
+            if (existing instanceof Map<?, ?> a && entry.getValue() instanceof Map<?, ?> b) out.put(entry.getKey(), deepMerge(castMap(a), castMap(b)));
+            else out.put(entry.getKey(), entry.getValue());
+        }
+        return out;
     }
 
     @SuppressWarnings("unchecked")
@@ -108,12 +142,13 @@ public class SimConfig {
         if (config.totalMassKg != null && (!Double.isFinite(config.totalMassKg) || config.totalMassKg <= 0))
             throw new IllegalArgumentException("Total robot mass must be positive and finite.");
         if (root.containsKey("vhacd_max_hulls")) config.vhacdMaxHulls = ((Number) root.get("vhacd_max_hulls")).intValue();
-        if (root.containsKey("imu_latency_ms")) config.imuLatencyMs = ((Number) root.get("imu_latency_ms")).longValue();
         config.electrical = simcore.ElectricalConfig.parse(root);
+        config.imuLatencyMs = config.electrical.imuLatencyMs;
+        Map<String, Object> source = new LinkedHashMap<>();
+        for (String key : simcore.ElectricalConfig.KEYS) if (root.containsKey(key)) source.put(key, root.get(key));
+        config.electricalSource = source;
         if (config.vhacdMaxHulls < 1 || config.vhacdMaxHulls > 16)
             throw new IllegalArgumentException("vhacd_max_hulls must be between 1 and 16");
-        if (config.imuLatencyMs < 0 || config.imuLatencyMs > 200)
-            throw new IllegalArgumentException("imu_latency_ms must be between 0 and 200");
         if (root.containsKey("extraClasspath")) {
             for (Object o : (List<Object>) root.get("extraClasspath")) {
                 config.extraClasspath.add((String) o);

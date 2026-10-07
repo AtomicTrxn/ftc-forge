@@ -17,7 +17,7 @@ import java.util.Set;
  * "battery": {internal_voltage_v, internal_resistance_ohm, capacity_mah, initial_charge_fraction,
  *             empty_voltage_v, curve_shape, empty_resistance_ohm, brownout_voltage_v, brownout_hold_s, brownout_recovery_voltage_v},
  * "loads":   {hub_baseline_a, servo_hold_a, servo_active_a, servo_active_duration_ms},
- * "encoder_latency_ms": n,
+ * "imu_latency_ms": n, "encoder_latency_ms": n,
  * "bus":     {voltage_latency_ms, current_latency_ms, read_cost_ms, velocity_window_ms},
  * "imu":     {yaw_scale_error, yaw_drift_rad_s, gyro_bias_rad_s, gyro_noise_rad_s, angle_noise_rad, seed, read_cost_ms},
  * "odometry": {latency_ms, linear_scale_error, heading_scale_error, heading_drift_rad_s,
@@ -45,6 +45,7 @@ public final class ElectricalConfig {
     public double servoActiveA = 0;
     public long servoActiveDurationMs = 300;
 
+    public long imuLatencyMs = 8;
     public long encoderLatencyMs = SimDcMotorEx.DEFAULT_ENCODER_LATENCY_MS;
     public long voltageLatencyMs = 0;
     public long currentLatencyMs = 0;
@@ -55,6 +56,10 @@ public final class ElectricalConfig {
     public OdometryParams odometry = OdometryParams.IDEAL;
     public MotorTuning motorDefaults = MotorTuning.NONE;
     public final Map<String, MotorTuning> motorOverrides = new LinkedHashMap<>();
+
+    /** Top-level configuration keys this class reads; used to lift them out of sim.config or a calibration profile. */
+    public static final Set<String> KEYS = Set.of("battery", "loads", "imu_latency_ms", "encoder_latency_ms", "bus", "imu",
+        "odometry", "motor_defaults", "motor_overrides");
 
     private static final Set<String> BATTERY_KEYS = Set.of("internal_voltage_v", "internal_resistance_ohm", "capacity_mah",
         "initial_charge_fraction", "empty_voltage_v", "curve_shape", "empty_resistance_ohm", "brownout_voltage_v", "brownout_hold_s",
@@ -89,6 +94,7 @@ public final class ElectricalConfig {
         c.servoActiveA = num(loads, "servo_active_a", c.servoActiveA, 0, 10);
         c.servoActiveDurationMs = (long) num(loads, "servo_active_duration_ms", c.servoActiveDurationMs, 0, 60000);
 
+        c.imuLatencyMs = (long) num(root, "imu_latency_ms", c.imuLatencyMs, 0, 200);
         c.encoderLatencyMs = (long) num(root, "encoder_latency_ms", c.encoderLatencyMs, 0, 200);
         Map<String, Object> bus = block(root, "bus", BUS_KEYS);
         c.voltageLatencyMs = (long) num(bus, "voltage_latency_ms", c.voltageLatencyMs, 0, 200);
@@ -170,6 +176,7 @@ public final class ElectricalConfig {
         }
         for (var device : map.getAll(com.qualcomm.robotcore.hardware.HardwareDevice.class)) {
             if (device instanceof SimIMU simImu) {
+                simImu.setLatencyMs(imuLatencyMs);
                 simImu.configureErrors(imu, map.getNamesOf(device).stream().findFirst().orElse("imu"));
             }
             if (device instanceof PoseSink sink) {
