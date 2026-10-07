@@ -15,7 +15,7 @@ setting by setting, and its measured battery and friction values win.
     "capacity_mah": 0, "initial_charge_fraction": 1.0, "empty_voltage_v": 10.5, "curve_shape": 1.0,
     "empty_resistance_ohm": -1,
     "thermal_capacity_j_per_k": 0, "thermal_resistance_k_per_w": 2.0, "ambient_c": 25, "reference_c": 25,
-    "resistance_temp_coeff_per_k": 0,
+    "resistance_temp_coeff_per_k": 0, "capacity_temp_coeff_per_k": 0,
     "brownout_voltage_v": 0, "brownout_hold_s": 2.0, "brownout_recovery_voltage_v": 0
   },
   "loads": { "hub_baseline_a": 0, "servo_hold_a": 0, "servo_active_a": 0, "servo_active_duration_ms": 300 },
@@ -34,7 +34,8 @@ setting by setting, and its measured battery and friction values win.
     "thermal_threshold_fraction": 0.7, "thermal_time_constant_s": 20, "thermal_max_derate": 0.3,
     "velocity_p_gain": 1.0, "position_p_gain": 0.01,
     "thermal_capacity_j_per_k": 0, "thermal_resistance_k_per_w": 6, "ambient_c": 25, "derate_start_c": 80,
-    "derate_full_c": 130, "winding_resistance_ohm": 0, "resistance_tempco_per_k": 0.0039
+    "derate_full_c": 130, "winding_resistance_ohm": 0, "resistance_tempco_per_k": 0.0039,
+    "transmission_efficiency": 1.0, "backlash_motor_rad": 0, "velocity_i_gain": 0, "velocity_d_gain": 0
   },
   "motor_overrides": { "arm_motor": { "viscous_friction_nm_s_per_rad": 0.05 } }
 }
@@ -53,7 +54,8 @@ current: `V = Voc - R * (I_motors + I_loads)`. Motor torque, the hub `VoltageSen
 - **Pack temperature** (`thermal_capacity_j_per_k > 0` for self-heating): the pack warms by `I^2 R` and cools to `ambient_c`
   through `thermal_resistance_k_per_w`. `resistance_temp_coeff_per_k > 0` makes resistance rise below `reference_c` and fall
   above it (never below 30% of the base value), so a cold pack sags harder even with no self-heating (`ambient_c` below
-  `reference_c`). `initial_temperature_c` starts the pack away from ambient. The coefficient is a placeholder, not a NiMH curve.
+  `reference_c`). `initial_temperature_c` starts the pack away from ambient. `capacity_temp_coeff_per_k > 0` also shrinks usable capacity below `reference_c` (never under 30%), so a cold pack drains faster. Both
+  coefficients are placeholders, not NiMH curves.
 - **Brownout** (`brownout_voltage_v > 0`): if the terminal voltage drops below it, the hub resets: motor drivers are cut (the
   motors float and draw no current) for at least `brownout_hold_s` and until the open-circuit voltage is back above
   `brownout_recovery_voltage_v` (default threshold + 0.5 V). OpModes keep running, which a real hub restart would not do.
@@ -84,7 +86,7 @@ current: `V = Voc - R * (I_motors + I_loads)`. Motor torque, the hub `VoltageSen
   and `position_noise_m` / `heading_noise_rad` add zero-mean Gaussian noise per pose update. `seed` makes noisy runs repeat;
   each device mixes in its own name. Latency and drift need the simulator clock, so they apply in the 3D and native-physics
   runs, not in the legacy motor-only headless run.
-- `bus.sensor_read_cost_ms` blocks every distance and color sensor read (each color channel is one read).
+- `bus.sensor_read_cost_ms` blocks every distance, color and touch sensor read (each color channel is one read).
 - Scene distance, color, touch and camera sensors have their own `latency_ms`/noise settings in the scene sensor config.
 
 ## Motor placeholders
@@ -104,6 +106,20 @@ by `1 / (1 + resistance_tempco_per_k * (T - 25))`. Between `derate_start_c` and 
 `thermal_max_derate`. The step is exact for any tick length. `0` (default) keeps the heuristic. No FTC vendor publishes these
 numbers, so every default is a placeholder; a stalled motor with the placeholders reaches the derate range in tens of seconds.
 
+## Transmission, backlash and the velocity loop
+
+- `transmission_efficiency` (0.1..1, default 1) models a lossy stage after the motor (belt, chain, lead screw) for motors that
+  drive a physics joint: a driving motor delivers that fraction of its torque to the load, and a motor being driven (torque
+  opposing its motion) is felt by the load as torque divided by the efficiency. The datasheet stall torque already includes the
+  gearbox, so this is only for additional losses. Unbound drive motors are not affected.
+- `backlash_motor_rad` is gear play measured at the **motor shaft** (output play times the reduction). The encoder trails the
+  load by up to half the gap and holds still while the load reverses through it (hysteresis). It changes what the encoder
+  reports; the torque dead zone while the gears are out of contact is not modeled.
+- `velocity_i_gain` / `velocity_d_gain` (default 0) add integral and derivative terms to the `RUN_USING_ENCODER` loop, next to
+  `velocity_p_gain`. The integral is clamped to full power. **These are the simulator's normalized units, not the hub firmware's**,
+  so tuned `setPIDFCoefficients` values from a real hub do not transfer. A team's own `setPIDFCoefficients` call still sets only
+  the proportional gain.
+
 ## Also fixed here
 
 A motor on `ZeroPowerBehavior.FLOAT` (or with its driver cut by a brownout) used to be braked by its back-EMF as if
@@ -111,7 +127,6 @@ A motor on `ZeroPowerBehavior.FLOAT` (or with its driver cut by a brownout) used
 
 ## Not modeled
 
-Cell imbalance, temperature-dependent pack capacity, gearbox efficiency and backlash, regeneration limits, bus cost for
-touch sensors, and real hub brownout behavior. Temperature is not logged by the robot recorder, so these thermal values are not
+Cell imbalance, regeneration limits, the torque dead zone of backlash, hub PIDF firmware units, and real hub brownout behavior. Temperature is not logged by the robot recorder, so these thermal values are not
 fitted by the calibration pass. Nothing here is checked against a robot recording: calibrate
 against your hardware before trusting the numbers.

@@ -9,16 +9,28 @@ public record MotorTuning(Double rotorInertiaKgM2, Double staticFrictionNm, Doub
                           Double thermalThresholdFraction, Double thermalTimeConstantS, Double thermalMaxDerate,
                           Double velocityPGain, Double positionPGain,
                           Double windingCapacityJPerK, Double windingResistanceKPerW, Double ambientC, Double derateStartC,
-                          Double derateFullC, Double windingResistanceOhm, Double resistanceTempcoPerK) {
+                          Double derateFullC, Double windingResistanceOhm, Double resistanceTempcoPerK,
+                          Double transmissionEfficiency, Double backlashMotorRad, Double velocityIGain, Double velocityDGain) {
     public static final MotorTuning NONE = new MotorTuning(null, null, null, null, null, null, null, null,
-        null, null, null, null, null, null, null);
+        null, null, null, null, null, null, null, null, null, null, null);
+
+    /** The form without the transmission, backlash and extra velocity-gain fields. */
+    public MotorTuning(Double rotorInertiaKgM2, Double staticFrictionNm, Double viscousFrictionNmSPerRad,
+                       Double thermalThresholdFraction, Double thermalTimeConstantS, Double thermalMaxDerate,
+                       Double velocityPGain, Double positionPGain,
+                       Double windingCapacityJPerK, Double windingResistanceKPerW, Double ambientC, Double derateStartC,
+                       Double derateFullC, Double windingResistanceOhm, Double resistanceTempcoPerK) {
+        this(rotorInertiaKgM2, staticFrictionNm, viscousFrictionNmSPerRad, thermalThresholdFraction, thermalTimeConstantS,
+            thermalMaxDerate, velocityPGain, positionPGain, windingCapacityJPerK, windingResistanceKPerW, ambientC,
+            derateStartC, derateFullC, windingResistanceOhm, resistanceTempcoPerK, null, null, null, null);
+    }
 
     /** The original eight-field form (no winding thermal model). */
     public MotorTuning(Double rotorInertiaKgM2, Double staticFrictionNm, Double viscousFrictionNmSPerRad,
                        Double thermalThresholdFraction, Double thermalTimeConstantS, Double thermalMaxDerate,
                        Double velocityPGain, Double positionPGain) {
         this(rotorInertiaKgM2, staticFrictionNm, viscousFrictionNmSPerRad, thermalThresholdFraction, thermalTimeConstantS,
-            thermalMaxDerate, velocityPGain, positionPGain, null, null, null, null, null, null, null);
+            thermalMaxDerate, velocityPGain, positionPGain, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     public MotorTuning {
@@ -37,6 +49,10 @@ public record MotorTuning(Double rotorInertiaKgM2, Double staticFrictionNm, Doub
         range(derateFullC, "derate_full_c", -40, 400);
         range(windingResistanceOhm, "winding_resistance_ohm", 0, 100);
         range(resistanceTempcoPerK, "resistance_tempco_per_k", 0, 0.05);
+        range(transmissionEfficiency, "transmission_efficiency", 0.1, 1);
+        range(backlashMotorRad, "backlash_motor_rad", 0, 6.2832);
+        range(velocityIGain, "velocity_i_gain", 0, 1000);
+        range(velocityDGain, "velocity_d_gain", 0, 1000);
         if (derateStartC != null && derateFullC != null && derateFullC <= derateStartC)
             throw new IllegalArgumentException("derate_full_c must exceed derate_start_c");
     }
@@ -49,7 +65,9 @@ public record MotorTuning(Double rotorInertiaKgM2, Double staticFrictionNm, Doub
             pick(velocityPGain, fallback.velocityPGain), pick(positionPGain, fallback.positionPGain),
             pick(windingCapacityJPerK, fallback.windingCapacityJPerK), pick(windingResistanceKPerW, fallback.windingResistanceKPerW),
             pick(ambientC, fallback.ambientC), pick(derateStartC, fallback.derateStartC), pick(derateFullC, fallback.derateFullC),
-            pick(windingResistanceOhm, fallback.windingResistanceOhm), pick(resistanceTempcoPerK, fallback.resistanceTempcoPerK));
+            pick(windingResistanceOhm, fallback.windingResistanceOhm), pick(resistanceTempcoPerK, fallback.resistanceTempcoPerK),
+            pick(transmissionEfficiency, fallback.transmissionEfficiency), pick(backlashMotorRad, fallback.backlashMotorRad),
+            pick(velocityIGain, fallback.velocityIGain), pick(velocityDGain, fallback.velocityDGain));
     }
 
     private static Double pick(Double mine, Double theirs) { return mine != null ? mine : theirs; }

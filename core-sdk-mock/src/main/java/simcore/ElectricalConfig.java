@@ -40,6 +40,7 @@ public final class ElectricalConfig {
     public double packAmbientC = 25.0;
     public double packReferenceC = 25.0;
     public double packResistanceTempCoeffPerK = 0;
+    public double packCapacityTempCoeffPerK = 0;
     public Double packInitialTemperatureC = null;
     public double emptyResistanceOhm = -1;         // -1: resistance does not rise as the pack drains
     public double brownoutVoltageV = 0;
@@ -70,7 +71,7 @@ public final class ElectricalConfig {
 
     private static final Set<String> BATTERY_KEYS = Set.of("internal_voltage_v", "internal_resistance_ohm", "capacity_mah",
         "initial_charge_fraction", "empty_voltage_v", "curve_shape", "empty_resistance_ohm", "thermal_capacity_j_per_k",
-        "thermal_resistance_k_per_w", "ambient_c", "reference_c", "resistance_temp_coeff_per_k", "initial_temperature_c", "brownout_voltage_v", "brownout_hold_s",
+        "thermal_resistance_k_per_w", "ambient_c", "reference_c", "resistance_temp_coeff_per_k", "capacity_temp_coeff_per_k", "initial_temperature_c", "brownout_voltage_v", "brownout_hold_s",
         "brownout_recovery_voltage_v");
     private static final Set<String> LOAD_KEYS = Set.of("hub_baseline_a", "servo_hold_a", "servo_active_a", "servo_active_duration_ms");
     private static final Set<String> BUS_KEYS = Set.of("voltage_latency_ms", "current_latency_ms", "read_cost_ms", "velocity_window_ms", "sensor_read_cost_ms");
@@ -81,7 +82,8 @@ public final class ElectricalConfig {
     private static final Set<String> MOTOR_KEYS = Set.of("rotor_inertia_kg_m2", "static_friction_nm", "viscous_friction_nm_s_per_rad",
         "thermal_threshold_fraction", "thermal_time_constant_s", "thermal_max_derate", "velocity_p_gain", "position_p_gain",
         "thermal_capacity_j_per_k", "thermal_resistance_k_per_w", "ambient_c", "derate_start_c", "derate_full_c",
-        "winding_resistance_ohm", "resistance_tempco_per_k");
+        "winding_resistance_ohm", "resistance_tempco_per_k", "transmission_efficiency", "backlash_motor_rad",
+        "velocity_i_gain", "velocity_d_gain");
 
     @SuppressWarnings("unchecked")
     public static ElectricalConfig parse(Map<String, Object> root) {
@@ -99,6 +101,7 @@ public final class ElectricalConfig {
         c.packAmbientC = num(battery, "ambient_c", c.packAmbientC, -40, 80);
         c.packReferenceC = num(battery, "reference_c", c.packReferenceC, -40, 80);
         c.packResistanceTempCoeffPerK = num(battery, "resistance_temp_coeff_per_k", c.packResistanceTempCoeffPerK, 0, 0.1);
+        c.packCapacityTempCoeffPerK = num(battery, "capacity_temp_coeff_per_k", c.packCapacityTempCoeffPerK, 0, 0.1);
         if (battery.containsKey("initial_temperature_c")) c.packInitialTemperatureC = num(battery, "initial_temperature_c", 25, -40, 120);
         c.brownoutVoltageV = num(battery, "brownout_voltage_v", c.brownoutVoltageV, 0, 18);
         c.brownoutHoldS = num(battery, "brownout_hold_s", c.brownoutHoldS, 0, 60);
@@ -174,6 +177,7 @@ public final class ElectricalConfig {
         pack.ambientC = packAmbientC;
         pack.referenceC = packReferenceC;
         pack.resistanceTempCoeffPerK = packResistanceTempCoeffPerK;
+        pack.capacityTempCoeffPerK = packCapacityTempCoeffPerK;
         pack.resetTemperature();
         if (packInitialTemperatureC != null) pack.setTemperatureC(packInitialTemperatureC);
         pack.emptyResistanceOhm = emptyResistanceOhm;
@@ -201,6 +205,7 @@ public final class ElectricalConfig {
         for (var device : map.getAll(com.qualcomm.robotcore.hardware.HardwareDevice.class)) {
             if (device instanceof SimDistanceSensor distance) distance.setReadCostMs(sensorReadCostMs);
             if (device instanceof SimColorSensor color) color.setReadCostMs(sensorReadCostMs);
+            if (device instanceof SimTouchSensor touch) touch.setReadCostMs(sensorReadCostMs);
             if (device instanceof SimIMU simImu) {
                 simImu.setLatencyMs(imuLatencyMs);
                 simImu.configureErrors(imu, map.getNamesOf(device).stream().findFirst().orElse("imu"));
@@ -217,7 +222,8 @@ public final class ElectricalConfig {
             opt(m, "thermal_threshold_fraction"), opt(m, "thermal_time_constant_s"), opt(m, "thermal_max_derate"),
             opt(m, "velocity_p_gain"), opt(m, "position_p_gain"),
             opt(m, "thermal_capacity_j_per_k"), opt(m, "thermal_resistance_k_per_w"), opt(m, "ambient_c"), opt(m, "derate_start_c"),
-            opt(m, "derate_full_c"), opt(m, "winding_resistance_ohm"), opt(m, "resistance_tempco_per_k"));
+            opt(m, "derate_full_c"), opt(m, "winding_resistance_ohm"), opt(m, "resistance_tempco_per_k"),
+            opt(m, "transmission_efficiency"), opt(m, "backlash_motor_rad"), opt(m, "velocity_i_gain"), opt(m, "velocity_d_gain"));
     }
 
     private static Double opt(Map<String, Object> m, String key) {

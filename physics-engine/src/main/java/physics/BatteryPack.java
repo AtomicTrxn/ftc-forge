@@ -40,6 +40,12 @@ public class BatteryPack {
      */
     public double resistanceTempCoeffPerK = 0;
 
+    /**
+     * Fractional usable-capacity change per kelvin above {@link #referenceC} (a cold pack delivers less); 0 disables.
+     * Capacity never drops below 30% of the rated value. A placeholder, not a measured NiMH curve.
+     */
+    public double capacityTempCoeffPerK = 0;
+
     private double temperatureC = Double.NaN;
     private double charge = 1.0;
     private boolean brownedOut;
@@ -94,7 +100,8 @@ public class BatteryPack {
     /** Draws {@code currentA} (battery side) for {@code dtS}. */
     public synchronized void consume(double currentA, double dtS) {
         if (capacityAh <= 0 || currentA <= 0) return;
-        charge = Math.max(0, charge - currentA * dtS / (capacityAh * 3600));
+        double usableAh = capacityAh * Math.max(0.3, 1 + capacityTempCoeffPerK * (temperatureC() - referenceC));
+        charge = Math.max(0, charge - currentA * dtS / (usableAh * 3600));
     }
 
     /** Updates the brownout latch from this tick's terminal and open-circuit voltage. */

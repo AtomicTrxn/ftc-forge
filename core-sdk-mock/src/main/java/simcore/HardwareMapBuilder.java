@@ -151,6 +151,7 @@ public class HardwareMapBuilder {
         PACK.ambientC = 25.0;
         PACK.referenceC = 25.0;
         PACK.resistanceTempCoeffPerK = 0;
+        PACK.capacityTempCoeffPerK = 0;
         PACK.resetTemperature();
         PACK.setChargeFraction(1.0);
     }

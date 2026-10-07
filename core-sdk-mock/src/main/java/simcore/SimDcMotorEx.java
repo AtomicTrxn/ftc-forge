@@ -47,6 +47,12 @@ public class SimDcMotorEx implements DcMotorEx {
     private SimVoltageSensor hub;
     private long currentLatencyMs;
     private long velocityWindowMs;
+    private double transmissionEfficiency = 1.0;
+    private double backlashMotorRad;
+    private boolean backlashPrimed;
+    private double encoderShaftRadians;
+    private double velocityIGain, velocityDGain;
+    private double velocityIntegral, velocityPreviousError, velocityDerivative;
     private InterpolatedSensorBuffer currentBuffer = new InterpolatedSensorBuffer(1000);
     private double lastKnownCurrentAmps;
 
@@ -73,7 +79,8 @@ public class SimDcMotorEx implements DcMotorEx {
             case RUN_USING_ENCODER: {
                 double targetOmega = targetVelocityFraction * spec.omegaNoLoadRadS;
                 double kP = pidf.get(RunMode.RUN_USING_ENCODER).p;
-                double correction = kP * (targetOmega - logicalOmega) / spec.omegaNoLoadRadS;
+                double correction = kP * (targetOmega - logicalOmega) / spec.omegaNoLoadRadS
+                    + velocityIGain * velocityIntegral + velocityDGain * velocityDerivative;
                 return clamp(power + correction);
             }
             case RUN_TO_POSITION: {
@@ -136,6 +143,7 @@ public class SimDcMotorEx implements DcMotorEx {
             currentPositionTicks = shaftTicks() - encoderZeroTicks;
         }
 
+        updateVelocityLoop(dtSeconds);
         currentBuffer.push(simTimeMs, Math.abs(lastCurrentAmps));
         double delayedCurrent = currentLatencyMs == 0 ? Double.NaN : currentBuffer.read(simTimeMs, currentLatencyMs);
         lastKnownCurrentAmps = Double.isNaN(delayedCurrent) ? Math.abs(lastCurrentAmps) : delayedCurrent;
@@ -155,12 +163,32 @@ public class SimDcMotorEx implements DcMotorEx {
         }
     }
 
+    /**
+     * Advances the integral and derivative terms of the velocity loop once per tick, from the error at the end of the tick, so
+     * {@link #commandedPower()} stays a pure function of state within a tick. Gains are in the simulator's normalized units
+     * (power per normalized speed error), not the hub firmware's.
+     */
+    private void updateVelocityLoop(double dtSeconds) {
+        if (mode != RunMode.RUN_USING_ENCODER || (velocityIGain == 0 && velocityDGain == 0) || powerCut) {
+            velocityIntegral = 0;
+            velocityDerivative = 0;
+            velocityPreviousError = 0;
+            return;
+        }
+        double logicalOmega = direction == Direction.REVERSE ? -omegaRadS : omegaRadS;
+        double error = (targetVelocityFraction * spec.omegaNoLoadRadS - logicalOmega) / spec.omegaNoLoadRadS;
+        double limit = velocityIGain > 0 ? 1.0 / velocityIGain : 0;          // anti-windup: integral term never exceeds full power
+        velocityIntegral = Math.max(-limit, Math.min(limit, velocityIntegral + error * dtSeconds));
+        velocityDerivative = dtSeconds > 0 ? (error - velocityPreviousError) / dtSeconds : 0;
+        velocityPreviousError = error;
+    }
+
     /** Bind a real physics joint: the motor model supplies effort, Bullet supplies motion. */
     public synchronized void useExternalShaft() { externallyDriven = true; }
 
     public synchronized void syncExternalShaft(double radians, double radiansPerSecond) {
         if (!externallyDriven) throw new IllegalStateException("Motor is not bound to external physics");
-        externalShaftRadians = radians;
+        externalShaftRadians = applyBacklash(radians);
         omegaRadS = radiansPerSecond;
         currentPositionTicks = shaftTicks() - encoderZeroTicks;
     }
@@ -171,12 +199,28 @@ public class SimDcMotorEx implements DcMotorEx {
     }
 
     /** Physical output-shaft torque, including back-EMF and the BRAKE/FLOAT distinction. */
+    /**
+     * Gear play between the motor shaft (where the encoder sits) and the load: the encoder angle trails the load by
+     * up to half the gap and holds still while the load reverses through it (hysteresis).
+     */
+    private double applyBacklash(double loadRadians) {
+        if (backlashMotorRad <= 0) return loadRadians;
+        double half = backlashMotorRad / 2;
+        if (!backlashPrimed) { encoderShaftRadians = loadRadians; backlashPrimed = true; }
+        if (loadRadians - encoderShaftRadians > half) encoderShaftRadians = loadRadians - half;
+        else if (encoderShaftRadians - loadRadians > half) encoderShaftRadians = loadRadians + half;
+        return encoderShaftRadians;
+    }
+
     public synchronized double externalShaftTorque() {
         if (mode == RunMode.STOP_AND_RESET_ENCODER) return 0;
         double command = commandedPower();
         if (command == 0 && (zeroPowerBehavior == ZeroPowerBehavior.FLOAT || powerCut)) return 0;
         double voltage = command * batteryVoltage * (direction == Direction.FORWARD ? 1 : -1);
-        return motorModel.torque(spec, omegaRadS, voltage);
+        double torque = motorModel.torque(spec, omegaRadS, voltage);
+        // Transmission loss: a driving motor delivers eta of its torque; one being driven (braking against the load)
+        // is felt by the load as 1/eta. Efficiency 1 (default) is lossless.
+        return torque * omegaRadS >= 0 ? torque * transmissionEfficiency : torque / transmissionEfficiency;
     }
 
     public synchronized double externalTorqueDamping() {
@@ -250,6 +294,10 @@ public class SimDcMotorEx implements DcMotorEx {
         if (motorModel.derateFullC <= motorModel.derateStartC)
             throw new IllegalArgumentException("derate_full_c must exceed derate_start_c");
         motorModel.resetThermal();
+        if (t.transmissionEfficiency() != null) transmissionEfficiency = t.transmissionEfficiency();
+        if (t.backlashMotorRad() != null) { backlashMotorRad = t.backlashMotorRad(); backlashPrimed = false; }
+        if (t.velocityIGain() != null) velocityIGain = t.velocityIGain();
+        if (t.velocityDGain() != null) velocityDGain = t.velocityDGain();
         if (t.velocityPGain() != null) {
             var c = pidf.get(RunMode.RUN_USING_ENCODER);
             pidf.put(RunMode.RUN_USING_ENCODER, new PIDFCoefficients(t.velocityPGain(), c.i, c.d, c.f));

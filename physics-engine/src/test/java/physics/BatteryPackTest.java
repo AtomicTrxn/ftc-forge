@@ -92,4 +92,19 @@ class BatteryPackTest {
         pack.heat(50, 1, 100);
         assertEquals(25, pack.temperatureC(), "no heat capacity configured: temperature stays at ambient");
     }
+
+    @Test void coldPackDeliversLessUsableCapacity() {
+        BatteryPack warm = new BatteryPack(), cold = new BatteryPack();
+        for (BatteryPack p : new BatteryPack[]{warm, cold}) { p.capacityAh = 1; p.capacityTempCoeffPerK = 0.01; }
+        cold.ambientC = 0;
+        warm.consume(1, 360);
+        cold.consume(1, 360);
+        assertEquals(0.9, warm.chargeFraction(), 1e-12);
+        assertEquals(1 - 0.1 / 0.75, cold.chargeFraction(), 1e-12);
+        BatteryPack none = new BatteryPack();
+        none.capacityAh = 1;
+        none.ambientC = 0;
+        none.consume(1, 360);
+        assertEquals(0.9, none.chargeFraction(), 1e-12, "coefficient 0: temperature does not matter");
+    }
 }
