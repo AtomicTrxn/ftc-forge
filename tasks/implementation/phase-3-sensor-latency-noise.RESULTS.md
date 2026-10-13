@@ -4,6 +4,8 @@
 
 **Task spec:** [phase-3-sensor-latency-noise.md](phase-3-sensor-latency-noise.md)
 
+**Changelog (2026-10-13, post-merge):** the "`SimIMU` left unwired" scope decision below was later reversed on `main`: `SimIMU` now samples orientation and angular rate from the physics chassis through `SensorRingBuffer`, with latency set by `imu_latency_ms` in `sim.config` (default 8 ms, range 0–200). The motor, battery, encoder-latency and calibration findings are unchanged. Statements marked *superseded* describe this phase as shipped.
+
 ## Summary
 
 Replaced Phase 1's placeholder linear tick-integration with R4's corrected motor/battery models, added `DcMotorEx` run-mode behavior (`RUN_USING_ENCODER`/`RUN_TO_POSITION`), shipped sensor/bus latency in this phase rather than deferring it further (per R4's own reassessment that the ring-buffer redesign is cheap enough to include), and built R5's staged calibration pass — validated end-to-end by generating a synthetic ground-truth log and confirming the calibrator recovers the true parameters from it alone. Along the way, this phase closed Phase 2's own flagged open issue (the kinematics interface needed a real-wheel-velocity input, not just commanded power) and, in doing so, found and fixed a real bug: naively feeding real physical motor rotation into the kinematics broke driving entirely for any wheel with `Direction.REVERSE` set, because that setting exists specifically to let team code use consistent command signs despite physically mirrored motor mounting — a distinction that's easy to get backwards, and was caught by an actual renderer run producing a stuck robot, not assumed correct in advance.
@@ -43,7 +45,7 @@ Default `R_battery = 0.15 Ω`, `V_internal = 12.6 V`, per R4's revised recommend
 
 **Shipped in this phase, not deferred** — per R4's own reassessment that the ring-buffer redesign is cheap enough to reconsider. `physics.SensorRingBuffer<T>` implements R4's exact design (push `(simTimeMs, value)` samples every tick; a read returns the most recent sample at or before `now - latencyMs`), validated with 3 JUnit tests including sample eviction beyond `maxAgeMs`. Wired into `SimDcMotorEx`'s encoder tick reads (`encoderLatencyMs = 8`, per R4's 7–10ms I2C default) — `getCurrentPosition()` now returns the latency-delayed value, not the true instantaneous one, matching real hardware behavior.
 
-**Scope decision, documented rather than silently done:** `SimIMU`'s orientation was **not** wired through a ring buffer. Its true value is static (zero) in this codebase — Phase 2 left IMU-to-kinematics wiring unimplemented, and that's a separate, pre-existing gap this phase didn't need to fix. Adding latency plumbing around a value that never changes would be ceremony with no observable effect, not a real validation, so it wasn't added.
+**Scope decision, documented rather than silently done** *(superseded — see Changelog)*: `SimIMU`'s orientation was **not** wired through a ring buffer. Its true value is static (zero) in this codebase — Phase 2 left IMU-to-kinematics wiring unimplemented, and that's a separate, pre-existing gap this phase didn't need to fix. Adding latency plumbing around a value that never changes would be ceremony with no observable effect, not a real validation, so it wasn't added.
 
 ## Calibration Pass
 
@@ -74,7 +76,7 @@ Added `MecanumKinematics.forwardFromWheelSpeeds(vLF, vRF, vLB, vRB)` — takes r
 - Friction terms and the specific thermal-heuristic shape are additions this phase made beyond R4's own equations (documented above), not something R4 itself specified numerically.
 - `RUN_USING_ENCODER`/`RUN_TO_POSITION` PIDF gains are placeholders that work correctly but aren't tuned.
 - Rotational inertia (`0.0015 kg·m²`) is a fixed, unsourced placeholder for every motor regardless of SKU — a real per-motor value would come from Phase 5's URDF `<inertial>` data.
-- `SimIMU` was deliberately left unwired to the ring-buffer latency mechanism (see above) — a scope decision, not an oversight.
+- *(Superseded — see Changelog.)* `SimIMU` was deliberately left unwired to the ring-buffer latency mechanism (see above) — a scope decision, not an oversight.
 - No real recorded robot telemetry log exists to validate the calibrator against — only the synthetic ground-truth log described above. This is a real gap in end-to-end validation (the calibration *algorithm* is proven correct; whether it converges well on messy, noisy *real* hardware data is not yet known) worth closing whenever a real robot/log becomes available.
 - The on-robot logging wrapper R5 designed (the class a real team would drop into their own TeamCode) was not implemented in this repo — it's fundamentally a deliverable for a team's own codebase, not this simulator's. `TelemetryLogWriter`/`TelemetryLogReader` in this repo implement the same CSV schema but are scoped to what this phase's calibration needed (battery/motor columns only, no IMU columns, since IMU orientation isn't dynamically tracked anywhere in this codebase yet).
 
@@ -82,4 +84,4 @@ Added `MecanumKinematics.forwardFromWheelSpeeds(vLF, vRF, vLB, vRB)` — takes r
 
 1. Phase 4's rigid-body physics will couple each wheel's rotation to the chassis and ground contact — the placeholder rotational inertia (motor-only, no chassis load) will need to be reconsidered once a wheel is no longer spinning freely.
 2. The friction/thermal parameters calibrated (or left uncalibrated) here should be re-examined once real telemetry logs are available, not trusted as final.
-3. `SimIMU` remains unwired to real chassis orientation — whichever phase finally drives IMU from real kinematics (Phase 2's original scope, never completed) should also decide whether to wire it through the ring-buffer latency mechanism already built and validated here.
+3. ~~`SimIMU` remains unwired to real chassis orientation~~ — resolved on `main`: `SimIMU` reads the physics chassis and applies the ring-buffer latency (see Changelog).

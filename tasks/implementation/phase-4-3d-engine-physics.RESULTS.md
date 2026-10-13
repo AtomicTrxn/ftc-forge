@@ -4,6 +4,8 @@
 
 **Task spec:** [phase-4-3d-engine-physics.md](phase-4-3d-engine-physics.md)
 
+**Changelog (2026-10-13, post-merge):** the direct velocity-setting chassis drive described below was later replaced on `main` by `PhysicsWorld.applyDriveImpulse` — an exact first-order response capped by max acceleration and a wheel-grip impulse budget, applied with `applyCentralImpulse`/`applyTorqueImpulse` (see README "Current limits"). The bullets marked *superseded* below describe this phase as shipped, not current behavior; the bounded-impulse approach resolves the stability concern that motivated the original force → velocity switch while keeping external pushes. The V-HACD hull-count finding and the intake validation are unchanged.
+
 ## Summary
 
 Built real rigid-body physics via Minie (Libbulletjme) inside the existing jME scene: static field walls/floor, a torus game piece with genuine V-HACD convex-hull collision, and a dynamic chassis rigid body driven by the kinematics model's velocity (not wheel-ground contact, per R2/R6's Mecanum constraint). A minimal physics smoke test de-risked the core engine integration before building the full scene; that discipline paid off directly, because the full scene then surfaced two real, non-obvious instability bugs that no isolated test would have caught: a numerically unstable chassis force controller that exploded to absurd coordinates, and a side effect where that explosion corrupted the *entire shared physics space* enough to break an unrelated body's (the game piece's) collision with the floor. Both are fixed, and the full intake-capture and strafing-confirmation scenarios now run correctly and reproducibly.
@@ -57,7 +59,7 @@ Real `IntakeDemoOpMode` sample: arms the intake (claw servo) before approaching,
 
 ## Deviations from Research
 
-- Chassis is driven by direct velocity-setting, not a force/torque controller — see Mecanum Drivetrain Confirmation above for the full reasoning and the instability it replaced.
+- *(Superseded — see Changelog.)* Chassis was driven by direct velocity-setting, not a force/torque controller — see Mecanum Drivetrain Confirmation above for the full reasoning and the instability it replaced.
 - V-HACD's `maxHulls` was tuned down from its default (64) to 8 for this specific game piece — a real, necessary parameter choice, not a research-specified constant.
 - Wheel-cylinder visual orientation is not pixel-verified (cosmetic, same limitation category as prior phases' screenshot-permission gap).
 - Field wall height (0.3m) is illustrative, not sourced from a specific FTC season's actual field geometry.
@@ -67,4 +69,4 @@ Real `IntakeDemoOpMode` sample: arms the intake (claw servo) before approaching,
 
 1. Phase 5's URDF importer will need to produce real collision geometry (via this same V-HACD pipeline, now proven to work with a tuned hull count) for whatever mesh a team's CAD export provides — the `maxHulls`/resolution tuning done here for one torus won't generalize automatically to arbitrary imported meshes; expect to need per-import tuning or a sensible adaptive default.
 2. The chassis's box collision shape and mass are still Phase 1's placeholder values — Phase 5 should replace them with the imported robot's real geometry and mass distribution.
-3. The direct-velocity-control deviation (see above) should be kept in mind if Phase 5 or later work wants the chassis to respond more realistically to being *pushed* by external contacts (e.g., another robot) — direct velocity-setting will resist external pushes more rigidly than a force-based approach would, a real trade-off of the robustness gained here.
+3. ~~The direct-velocity-control deviation should be kept in mind if later work wants the chassis to respond to being *pushed*~~ — resolved on `main`: the capped-impulse drive preserves external pushes (see Changelog).
